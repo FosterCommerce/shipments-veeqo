@@ -5,8 +5,8 @@ A **Veeqo provider** for the Foster Commerce Shipments plugin, plus product sync
 ## What it does
 
 - Adds Veeqo to the Shipments plugin's integration list, so shipments can be pushed to Veeqo from the control panel or queue.
-- Pushes the completed order to Veeqo as a single Veeqo order (Veeqo auto-allocates it for fulfilment), recording the Veeqo order id against its shipment for later lookup.
-- Polls Veeqo for shipped orders on a schedule and writes the carrier and tracking number back onto the matching shipment (Veeqo has no webhooks).
+- Pushes the completed order to Veeqo as a single Veeqo order, matched back by the order number (Veeqo auto-allocates it for fulfilment).
+- Polls Veeqo on a schedule (Veeqo has no webhooks) and mirrors each Veeqo allocation back as a Craft shipment, writing that allocation's carrier and tracking. When Veeqo splits an order across warehouses, Craft reflects the split.
 - Syncs Commerce products and variants to Veeqo as products and sellables when they are saved.
 - Pulls stock from Veeqo into Commerce on a schedule, keeping inventory-tracked variants in step (Veeqo is the inventory source of truth).
 

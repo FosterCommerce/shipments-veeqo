@@ -28,6 +28,12 @@ class ProductSync extends Component
 	public const EVENT_BEFORE_SEND_PAYLOAD = 'beforeSendPayload';
 
 	/**
+	 * SKU prefix for the synthetic sellable a custom (non-purchasable) line item is pushed under, so
+	 * the Craft line item id is recoverable when an allocation is mirrored back.
+	 */
+	public const CUSTOM_SKU_PREFIX = 'custom-';
+
+	/**
 	 * Creates or updates the given Commerce product in Veeqo, then records the returned
 	 * sellable and product IDs in the local mapping table for later order-push use.
 	 *
@@ -128,7 +134,7 @@ class ProductSync extends Component
 	{
 		$sku = trim($lineItem->getSku());
 		if ($sku === '') {
-			$sku = 'custom-' . $lineItem->id;
+			$sku = self::CUSTOM_SKU_PREFIX . $lineItem->id;
 		}
 
 		$currencyCode = (string) $lineItem->getOrder()?->getStore()->getCurrency()?->getCode();

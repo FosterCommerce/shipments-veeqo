@@ -236,17 +236,22 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNoteForShipment($shipment, 'shipment deleted'));
+		$order = $shipment->getOrder();
+		if (! $order instanceof Order) {
+			return;
+		}
+
+		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'shipment deleted'));
 	}
 
 	private function noteOrderDeleted(Event $event): void
 	{
 		$order = $event->sender;
-		if (! $order instanceof Order || $order->id === null) {
+		if (! $order instanceof Order) {
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNotesForOrder($order->id, 'order deleted'));
+		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'order deleted'));
 	}
 
 	/**
@@ -264,7 +269,12 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNotesForOrder((int) $record->orderId, 'order no longer requires shipping'));
+		$order = Order::find()->id((int) $record->orderId)->one();
+		if (! $order instanceof Order) {
+			return;
+		}
+
+		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'order no longer requires shipping'));
 	}
 
 	/**

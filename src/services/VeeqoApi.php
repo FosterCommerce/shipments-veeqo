@@ -132,6 +132,37 @@ class VeeqoApi extends Component
 	}
 
 	/**
+	 * Veeqo order id for an exact order-number match, or null when none exists. Veeqo's order search
+	 * is fuzzy over number and email, so results are filtered to an exact `number` match.
+	 *
+	 * @throws VeeqoApiException
+	 */
+	public function getOrderIdByNumber(string $number): ?int
+	{
+		if ($number === '') {
+			return null;
+		}
+
+		foreach ($this->get('/orders', [
+			'query' => $number,
+		]) as $order) {
+			if (! is_array($order)) {
+				continue;
+			}
+
+			if ((string) ($order['number'] ?? '') !== $number) {
+				continue;
+			}
+
+			if (isset($order['id']) && is_numeric($order['id'])) {
+				return (int) $order['id'];
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * @param array<string, mixed> $options
 	 * @throws VeeqoApiException
 	 */

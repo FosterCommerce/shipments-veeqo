@@ -16,13 +16,13 @@ use Throwable;
  */
 class NotifyCancellationJob extends BaseJob
 {
-	public ?int $veeqoOrderId = null;
+	public string $orderNumber = '';
 
 	public string $message = '';
 
 	public function execute($queue): void
 	{
-		if ($this->veeqoOrderId === null) {
+		if ($this->orderNumber === '') {
 			return;
 		}
 
@@ -39,12 +39,19 @@ class NotifyCancellationJob extends BaseJob
 			return;
 		}
 
+		$client = $provider->getClient();
+
 		try {
-			$provider->getClient()->post("/orders/{$this->veeqoOrderId}/notes", [
+			$veeqoOrderId = $client->getOrderIdByNumber($this->orderNumber);
+			if ($veeqoOrderId === null) {
+				return;
+			}
+
+			$client->post("/orders/{$veeqoOrderId}/notes", [
 				'text' => $this->message,
 			]);
 		} catch (VeeqoApiException $veeqoApiException) {
-			Craft::warning("Veeqo cancellation note failed for order {$this->veeqoOrderId}: " . $veeqoApiException->getMessage(), Plugin::HANDLE);
+			Craft::warning("Veeqo cancellation note failed for order {$this->orderNumber}: " . $veeqoApiException->getMessage(), Plugin::HANDLE);
 		}
 	}
 

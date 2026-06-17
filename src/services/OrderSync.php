@@ -15,10 +15,9 @@ use craft\helpers\MoneyHelper;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
-use fostercommerce\shipments\models\Integration;
-use fostercommerce\shipments\Plugin as ShipmentsPlugin;
 use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
 use fostercommerce\shipmentsveeqo\helpers\AddressFields;
+use fostercommerce\shipmentsveeqo\helpers\VeeqoReference;
 use fostercommerce\shipmentsveeqo\jobs\NotifyCancellationJob;
 use fostercommerce\shipmentsveeqo\Plugin;
 use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
@@ -27,12 +26,11 @@ use Throwable;
 use yii\base\Component;
 
 /**
- * Pushes a Commerce order to Veeqo as a Veeqo order, then records the Veeqo order id as the
- * shipment's integration reference.
+ * Pushes a Commerce order to Veeqo as one Veeqo order. Veeqo auto-allocates it; the poll mirrors
+ * each Veeqo allocation back as a Craft shipment.
  *
- * The whole Commerce order is sent; Veeqo auto-allocates it into a single allocation, which mirrors
- * the order's one shipment. Assumes one shipment per order: with several, each would re-push the
- * full order. Veeqo has no idempotency keys, so a stored reference short-circuits re-pushes.
+ * Veeqo has no idempotency keys, so the deterministic order number (prefix + order reference) is the
+ * idempotency key: a per-order mutex plus a number lookup short-circuit a duplicate push.
  */
 class OrderSync extends Component
 {
@@ -43,82 +41,43 @@ class OrderSync extends Component
 	 */
 	public function pushShipment(Shipment $shipment, Order $order, VeeqoProvider $provider): void
 	{
-		if ($shipment->id === null) {
-			throw new PermanentIntegrationException('Cannot push an unsaved shipment to Veeqo.');
+		if ($order->id === null) {
+			throw new PermanentIntegrationException('Cannot push an unsaved order to Veeqo.');
 		}
 
-		// Veeqo has no idempotency keys, so serialize the already-pushed check and the create. Without
-		// it a queue retry or a manual push racing the auto-push creates a second order.
 		$mutex = Craft::$app->getMutex();
-		$lockKey = 'shipments-veeqo:push:' . $shipment->id;
+		$lockKey = 'shipments-veeqo:push:order:' . $order->id;
 		if (! $mutex->acquire($lockKey, 15)) {
-			throw new IntegrationException("Another push is in progress for shipment {$shipment->id}.");
+			throw new IntegrationException("Another push is in progress for order {$order->id}.");
 		}
 
 		try {
-			$this->doPushShipment($shipment, $order, $provider);
+			$this->doPushOrder($order, $provider);
 		} finally {
 			$mutex->release($lockKey);
 		}
 	}
 
 	/**
-	 * Queues a note on the Veeqo order behind every shipment of a Craft order. Used when the order
-	 * is deleted or stops requiring shipping; Veeqo can't be cancelled via API, so we flag it.
-	 *
-	 * @throws Throwable
+	 * Queues a note on the order's Veeqo order flagging a Craft-side cancellation. Veeqo cannot cancel
+	 * an order via API, so the note prompts a warehouse user to do it. No-op when the order was never
+	 * pushed; the job resolves the Veeqo order by its number off the synchronous path.
 	 */
-	public function queueCancellationNotesForOrder(int $orderId, string $reason): void
+	public function queueCancellationNote(Order $order, string $reason): void
 	{
-		$shipmentsService = $this->shipments()->shipments;
-		$shipments = [
-			...$shipmentsService->findByOrderId($orderId),
-			...$shipmentsService->findTrashedByOrderId($orderId),
-		];
-
-		foreach ($shipments as $shipment) {
-			if ($shipment instanceof Shipment) {
-				$this->queueCancellationNoteForShipment($shipment, $reason);
-			}
-		}
-	}
-
-	/**
-	 * Queues a note on the Veeqo order behind a shipment. No-op when the shipment was never pushed.
-	 *
-	 * @throws Throwable
-	 */
-	public function queueCancellationNoteForShipment(Shipment $shipment, string $reason): void
-	{
-		if ($shipment->id === null) {
-			return;
-		}
-
 		$provider = $this->plugin()->getVeeqoProvider();
 		if (! $provider instanceof VeeqoProvider) {
 			return;
 		}
 
-		$integration = $this->shipments()->integrations->getIntegrationByHandle((string) $provider->handle);
-		if (! $integration instanceof Integration || $integration->id === null) {
-			return;
-		}
-
-		$veeqoOrderId = 0;
-		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId($shipment->id) as $integrationReference) {
-			if ($integrationReference->integrationId === $integration->id && $integrationReference->externalId !== '') {
-				$veeqoOrderId = (int) $integrationReference->externalId;
-				break;
-			}
-		}
-
-		if ($veeqoOrderId === 0) {
+		$number = VeeqoReference::orderNumber($provider->orderIdPrefix, (string) $order->reference);
+		if ($number === '') {
 			return;
 		}
 
 		Craft::$app->getQueue()->push(new NotifyCancellationJob([
-			'veeqoOrderId' => $veeqoOrderId,
-			'message' => "Craft shipment {$shipment->reference}: {$reason}. Please cancel this order in Veeqo.",
+			'orderNumber' => $number,
+			'message' => "Craft order {$order->reference}: {$reason}. Please cancel this order in Veeqo.",
 		]));
 	}
 
@@ -127,35 +86,33 @@ class OrderSync extends Component
 	 * @throws PermanentIntegrationException
 	 * @throws Throwable
 	 */
-	private function doPushShipment(Shipment $shipment, Order $order, VeeqoProvider $provider): void
+	private function doPushOrder(Order $order, VeeqoProvider $provider): void
 	{
-		$handle = (string) $provider->handle;
-		$integration = $this->resolveIntegration($handle);
-
-		if ($this->alreadyPushed((int) $shipment->id, (int) $integration->id)) {
-			Craft::info("Shipment {$shipment->id} already pushed to Veeqo; skipping.", Plugin::HANDLE);
-			return;
-		}
-
 		if ($provider->channelId === null) {
 			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
 		}
 
-		$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
-		if ($lineItemAttributes === []) {
-			throw new PermanentIntegrationException("Order {$order->id} has no line items to push to Veeqo.");
-		}
-
 		$client = $provider->getClient();
+		$number = VeeqoReference::orderNumber($provider->orderIdPrefix, (string) $order->reference);
 
 		try {
+			if ($client->getOrderIdByNumber($number) !== null) {
+				Craft::info("Veeqo order {$number} already exists; skipping push.", Plugin::HANDLE);
+				return;
+			}
+
+			$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
+			if ($lineItemAttributes === []) {
+				throw new PermanentIntegrationException("Order {$order->id} has no line items to push to Veeqo.");
+			}
+
 			$customerId = $this->plugin()->customerResolver->resolveCustomerId($order, $client);
 
 			$response = $client->post('/orders', [
 				'order' => [
 					'channel_id' => $provider->channelId,
 					'customer_id' => $customerId,
-					'number' => $provider->orderIdPrefix . $order->reference,
+					'number' => $number,
 					'send_notification_email' => $provider->notifyCustomer,
 					'deliver_to_attributes' => $this->buildDeliverTo($order),
 					'line_items_attributes' => $lineItemAttributes,
@@ -172,40 +129,8 @@ class OrderSync extends Component
 
 		$veeqoOrderId = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : 0;
 		if ($veeqoOrderId === 0) {
-			throw new PermanentIntegrationException("Veeqo order create for shipment {$shipment->id} returned no id.");
+			throw new PermanentIntegrationException("Veeqo order create for order {$order->id} returned no id.");
 		}
-
-		$this->shipments()->integrationReferences->setIntegrationReference(
-			$shipment,
-			$handle,
-			(string) $veeqoOrderId,
-			$integration->buildUrl((string) $veeqoOrderId),
-		);
-	}
-
-	/**
-	 * @throws PermanentIntegrationException
-	 */
-	private function resolveIntegration(string $handle): Integration
-	{
-		$integration = $this->shipments()->integrations->getIntegrationByHandle($handle);
-		if (! $integration instanceof Integration || $integration->id === null) {
-			throw new PermanentIntegrationException("No Shipments integration found for handle “{$handle}”.");
-		}
-
-		return $integration;
-	}
-
-	private function alreadyPushed(int $shipmentId, int $integrationId): bool
-	{
-		$references = $this->shipments()->integrationReferences->getReferencesForShipmentId($shipmentId);
-		foreach ($references as $reference) {
-			if ($reference->integrationId === $integrationId && $reference->externalId !== '') {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**
@@ -370,13 +295,6 @@ class OrderSync extends Component
 	{
 		/** @var Plugin $plugin */
 		$plugin = Plugin::getInstance();
-		return $plugin;
-	}
-
-	private function shipments(): ShipmentsPlugin
-	{
-		/** @var ShipmentsPlugin $plugin */
-		$plugin = ShipmentsPlugin::getInstance();
 		return $plugin;
 	}
 

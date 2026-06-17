@@ -9,28 +9,22 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
 /**
- * Parses extractTracking() against the real Veeqo /orders response shape captured 2026-06-16:
- * tracking nested under allocations[].shipment, carrier as an object with a name.
+ * Parses extractTracking() against the real Veeqo allocation shape captured 2026-06-16: tracking
+ * nested under allocation.shipment, carrier as an object with a name.
  */
 final class ShipmentPollerTrackingTest extends TestCase
 {
 	public function testPullsTrackingFromAllocationShipment(): void
 	{
 		$result = $this->extract([
-			'id' => 123,
-			'status' => 'shipped',
-			'allocations' => [
-				[
+			'id' => 1,
+			'shipment' => [
+				'tracking_number' => 'TRACK123',
+				'tracking_url' => 'https://track.example/abc',
+				'service_carrier_name' => 'Royal Mail Tracked 24',
+				'carrier' => [
 					'id' => 1,
-					'shipment' => [
-						'tracking_number' => 'TRACK123',
-						'tracking_url' => 'https://track.example/abc',
-						'service_carrier_name' => 'Royal Mail Tracked 24',
-						'carrier' => [
-							'id' => 1,
-							'name' => 'Royal Mail',
-						],
-					],
+					'name' => 'Royal Mail',
 				],
 			],
 		]);
@@ -43,23 +37,15 @@ final class ShipmentPollerTrackingTest extends TestCase
 		], $result);
 	}
 
-	public function testSkipsAllocationsWithoutTrackingAndPicksTheTrackedOne(): void
+	public function testReadsNestedTrackingNumberObjectAndStringCarrier(): void
 	{
 		$result = $this->extract([
-			'allocations' => [
-				[
-					'id' => 1,
-					'shipment' => [
-						'tracking_number' => null,
-					],
+			'id' => 2,
+			'shipment' => [
+				'tracking_number' => [
+					'tracking_number' => 'SECOND',
 				],
-				[
-					'id' => 2,
-					'shipment' => [
-						'tracking_number' => 'SECOND',
-						'carrier' => 'DHL',
-					],
-				],
+				'carrier' => 'DHL',
 			],
 		]);
 
@@ -70,36 +56,32 @@ final class ShipmentPollerTrackingTest extends TestCase
 		self::assertNull($result['service']);
 	}
 
-	public function testReturnsNullWhenNoAllocationHasTracking(): void
+	public function testReturnsNullWhenAllocationHasNoTracking(): void
 	{
 		self::assertNull($this->extract([
-			'allocations' => [
-				[
-					'id' => 1,
-					'shipment' => [
-						'tracking_number' => '',
-					],
-				],
+			'id' => 1,
+			'shipment' => [
+				'tracking_number' => '',
 			],
 		]));
 
 		self::assertNull($this->extract([
-			'allocations' => [],
+			'id' => 1,
 		]));
 
 		self::assertNull($this->extract([]));
 	}
 
 	/**
-	 * @param array<array-key, mixed> $order
+	 * @param array<array-key, mixed> $allocation
 	 * @return array<string, mixed>|null
 	 */
-	private function extract(array $order): ?array
+	private function extract(array $allocation): ?array
 	{
 		$method = new ReflectionMethod(ShipmentPoller::class, 'extractTracking');
 		$method->setAccessible(true);
 		/** @var array<string, mixed>|null $result */
-		$result = $method->invoke(new ShipmentPoller(), $order);
+		$result = $method->invoke(new ShipmentPoller(), $allocation);
 		return $result;
 	}
 }
