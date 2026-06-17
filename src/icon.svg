@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="e" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+  <defs>
+    <style>.veeqo_logo_j{fill:#fff;}.veeqo_logo_j,.veeqo_logo_k{stroke-width:0px;}.veeqo_logo_k{fill:url(#veeqo_logo_f);}</style>
+    <radialGradient id="veeqo_logo_f" cx="970.38" cy="921.11" fx="970.38" fy="921.11" r="1225.76" gradientUnits="userSpaceOnUse"><stop offset=".03" stop-color="#bd9664"/><stop offset=".12" stop-color="#95836a"/><stop offset=".23" stop-color="#6c6f71"/><stop offset=".31" stop-color="#526375"/><stop offset=".36" stop-color="#495f77"/><stop offset=".42" stop-color="#3f5267"/><stop offset=".54" stop-color="#27323f"/><stop offset=".61" stop-color="#171d25"/></radialGradient>
+  </defs>
+  <rect class="veeqo_logo_k" x="38.38" y="38.38" width="923.24" height="923.24" rx="255.52" ry="255.52"/>
+  <g transform="translate(500,500) scale(20) translate(-30.03,-25.855)">
+    <path class="veeqo_logo_j" d="M44.8935 39.2448V14.0496C44.8935 12.3521 43.5211 10.9796 41.8236 10.9796H16.6211C14.7647 10.9796 13.8473 13.2189 15.1692 14.5119L41.3902 40.7328C42.6543 42.0258 44.8935 41.0796 44.8935 39.2448Z"/>
+  </g>
+</svg>

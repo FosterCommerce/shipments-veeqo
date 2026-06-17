@@ -1,0 +1,38 @@
+{% import "_includes/forms" as forms %}
+
+{{ forms.autosuggestField({
+	label: 'provider.apiKeyLabel'|t('shipments-veeqo'),
+	instructions: 'provider.apiKeyInstructions'|t('shipments-veeqo'),
+	name: 'settings[apiKey]',
+	value: provider.apiKey,
+	class: 'ltr',
+	suggestEnvVars: true,
+}) }}
+
+{{ forms.textField({
+	label: 'provider.channelIdLabel'|t('shipments-veeqo'),
+	instructions: 'provider.channelIdInstructions'|t('shipments-veeqo'),
+	name: 'settings[channelId]',
+	value: provider.channelId,
+}) }}
+
+{{ forms.textField({
+	label: 'provider.orderIdPrefixLabel'|t('shipments-veeqo'),
+	instructions: 'provider.orderIdPrefixInstructions'|t('shipments-veeqo'),
+	name: 'settings[orderIdPrefix]',
+	value: provider.orderIdPrefix,
+}) }}
+
+{{ forms.lightSwitchField({
+	label: 'provider.notifyCustomerLabel'|t('shipments-veeqo'),
+	instructions: 'provider.notifyCustomerInstructions'|t('shipments-veeqo'),
+	name: 'settings[notifyCustomer]',
+	on: provider.notifyCustomer,
+}) }}
+
+{{ forms.textField({
+	label: 'provider.pollLookbackLabel'|t('shipments-veeqo'),
+	instructions: 'provider.pollLookbackInstructions'|t('shipments-veeqo'),
+	name: 'settings[pollLookbackHours]',
+	value: provider.pollLookbackHours,
+}) }}

@@ -1,0 +1,34 @@
+{% import "_includes/forms" as forms %}
+
+<div>
+	<p>
+		{{ 'settings.connectionNotice'|t('shipments-veeqo') }}
+	</p>
+</div>
+
+{{ forms.lightSwitchField({
+	label: 'settings.syncProductsLabel'|t('shipments-veeqo'),
+	instructions: 'settings.syncProductsInstructions'|t('shipments-veeqo'),
+	name: 'settings[syncProducts]',
+	on: settings.syncProducts,
+	errors: settings.getErrors('syncProducts'),
+}) }}
+
+{% set assetFields = craft.app.fields.allFields|filter(field => className(field) == 'craft\\fields\\Assets')|map(field => { label: field.name, value: field.handle }) %}
+
+{{ forms.selectField({
+	label: 'settings.productImagesLabel'|t('shipments-veeqo'),
+	instructions: 'settings.productImagesInstructions'|t('shipments-veeqo'),
+	name: 'settings[productImagesHandle]',
+	value: settings.productImagesHandle,
+	options: [{ label: '—', value: '' }]|merge(assetFields),
+	errors: settings.getErrors('productImagesHandle'),
+}) }}
+
+{{ forms.lightSwitchField({
+	label: 'settings.syncStockLabel'|t('shipments-veeqo'),
+	instructions: 'settings.syncStockInstructions'|t('shipments-veeqo'),
+	name: 'settings[syncStock]',
+	on: settings.syncStock,
+	errors: settings.getErrors('syncStock'),
+}) }}
