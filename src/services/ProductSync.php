@@ -301,10 +301,11 @@ class ProductSync extends Component
 			throw new PermanentIntegrationException('Cannot format a Veeqo price without a store currency.');
 		}
 
-		$decimal = MoneyHelper::toDecimal([
+		$money = MoneyHelper::toMoney([
 			'value' => (string) $amount,
 			'currency' => $currencyCode,
 		]);
+		$decimal = $money === false ? false : MoneyHelper::toDecimal($money);
 
 		if ($decimal === false) {
 			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");

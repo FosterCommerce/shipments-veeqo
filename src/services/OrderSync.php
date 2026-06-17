@@ -27,11 +27,12 @@ use Throwable;
 use yii\base\Component;
 
 /**
- * Pushes a Shipment to Veeqo as an order, then records the Veeqo order id as the shipment's
- * integration reference.
+ * Pushes a Commerce order to Veeqo as a Veeqo order, then records the Veeqo order id as the
+ * shipment's integration reference.
  *
- * Each Shipment maps to its own Veeqo order. Veeqo has no idempotency keys, so a stored reference
- * short-circuits re-pushes to avoid duplicate orders on queue retry.
+ * The whole Commerce order is sent; Veeqo auto-allocates it into a single allocation, which mirrors
+ * the order's one shipment. Assumes one shipment per order: with several, each would re-push the
+ * full order. Veeqo has no idempotency keys, so a stored reference short-circuits re-pushes.
  */
 class OrderSync extends Component
 {
@@ -140,9 +141,9 @@ class OrderSync extends Component
 			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
 		}
 
-		$lineItemAttributes = $this->buildLineItemAttributes($shipment, $order, $provider);
+		$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
 		if ($lineItemAttributes === []) {
-			throw new PermanentIntegrationException("Shipment {$shipment->id} has no Veeqo-mapped line items to push.");
+			throw new PermanentIntegrationException("Order {$order->id} has no line items to push to Veeqo.");
 		}
 
 		$client = $provider->getClient();
@@ -154,7 +155,7 @@ class OrderSync extends Component
 				'order' => [
 					'channel_id' => $provider->channelId,
 					'customer_id' => $customerId,
-					'number' => $provider->orderIdPrefix . $shipment->reference,
+					'number' => $provider->orderIdPrefix . $order->reference,
 					'send_notification_email' => $provider->notifyCustomer,
 					'deliver_to_attributes' => $this->buildDeliverTo($order),
 					'line_items_attributes' => $lineItemAttributes,
@@ -208,37 +209,25 @@ class OrderSync extends Component
 	}
 
 	/**
-	 * Map each shipment line item to a Veeqo sellable, creating the sellable on demand so a push
+	 * Map each order line item to a Veeqo sellable, creating the sellable on demand so a push
 	 * never requires a separate product sync first.
 	 *
 	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: string}>
 	 * @throws PermanentIntegrationException
 	 */
-	private function buildLineItemAttributes(Shipment $shipment, Order $order, VeeqoProvider $provider): array
+	private function buildLineItemAttributes(Order $order, VeeqoProvider $provider): array
 	{
 		$currencyCode = (string) $order->currency;
 
-		$orderLineItemsById = [];
-		foreach ($order->getLineItems() as $lineItem) {
-			if ($lineItem->id !== null) {
-				$orderLineItemsById[$lineItem->id] = $lineItem;
-			}
-		}
-
 		$attributes = [];
-		foreach ($shipment->getLineItems() as $shipmentLineItem) {
-			$lineItem = $orderLineItemsById[$shipmentLineItem->lineItemId] ?? null;
-			if (! $lineItem instanceof LineItem) {
-				continue;
-			}
-
+		foreach ($order->getLineItems() as $lineItem) {
 			$sellableId = $lineItem->purchasableId === null
 				? $this->resolveCustomSellableId($lineItem, $provider)
 				: $this->resolvePurchasableSellableId($lineItem, $provider);
 
 			$attributes[] = [
 				'sellable_id' => $sellableId,
-				'quantity' => $shipmentLineItem->qty,
+				'quantity' => $lineItem->qty,
 				'price_per_unit' => $this->priceString((float) $lineItem->salePrice, $currencyCode),
 			];
 		}
@@ -254,10 +243,15 @@ class OrderSync extends Component
 	 */
 	private function priceString(float $amount, string $currencyCode): string
 	{
-		$decimal = MoneyHelper::toDecimal([
+		if ($currencyCode === '') {
+			throw new PermanentIntegrationException('Cannot format a Veeqo price without an order currency.');
+		}
+
+		$money = MoneyHelper::toMoney([
 			'value' => (string) $amount,
 			'currency' => $currencyCode,
 		]);
+		$decimal = $money === false ? false : MoneyHelper::toDecimal($money);
 
 		if ($decimal === false) {
 			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");
