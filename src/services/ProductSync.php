@@ -9,6 +9,8 @@ use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
+use craft\helpers\MoneyHelper;
+use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
 use fostercommerce\shipmentsveeqo\events\ProductPayloadEvent;
 use fostercommerce\shipmentsveeqo\helpers\ProductImageFields;
@@ -28,6 +30,9 @@ class ProductSync extends Component
 	/**
 	 * Creates or updates the given Commerce product in Veeqo, then records the returned
 	 * sellable and product IDs in the local mapping table for later order-push use.
+	 *
+	 * @throws PermanentIntegrationException
+	 * @throws VeeqoApiException
 	 */
 	public function syncProduct(Product $product, VeeqoProvider $provider): void
 	{
@@ -75,7 +80,11 @@ class ProductSync extends Component
 		$failed = [];
 		foreach ($product->getVariants() as $variant) {
 			$sku = trim((string) $variant->sku);
-			if ($sku === '' || $variant->id === null) {
+			if ($sku === '') {
+				continue;
+			}
+
+			if ($variant->id === null) {
 				continue;
 			}
 
@@ -108,6 +117,37 @@ class ProductSync extends Component
 	}
 
 	/**
+	 * Create a Veeqo sellable for a custom (non-purchasable) line item and return its sellable id,
+	 * or 0 when the create response carries no matching sellable. Keys on the line item's own SKU,
+	 * falling back to a synthetic id so the sellable is stable per line item.
+	 *
+	 * @throws PermanentIntegrationException
+	 * @throws VeeqoApiException
+	 */
+	public function syncCustomLineItem(LineItem $lineItem, VeeqoProvider $provider): int
+	{
+		$sku = trim($lineItem->getSku());
+		if ($sku === '') {
+			$sku = 'custom-' . $lineItem->id;
+		}
+
+		$currencyCode = (string) $lineItem->getOrder()?->getStore()->getCurrency()?->getCode();
+
+		$response = $provider->getClient()->post('/products', [
+			'title' => $lineItem->getDescription(),
+			'sellables_attributes' => [
+				[
+					'sku_code' => $sku,
+					'title' => $lineItem->getDescription(),
+					'price' => $this->priceString((float) $lineItem->salePrice, $currencyCode),
+				],
+			],
+		]);
+
+		return $this->buildSellableIdIndexBySku($response)[$sku] ?? 0;
+	}
+
+	/**
 	 * Veeqo sellable and parent product ids for an exact SKU match, or null when none is found.
 	 * Veeqo's product search is free text over name and SKU, so results are filtered to an exact
 	 * (case-sensitive) sku_code match, mirroring how Veeqo treats SKUs.
@@ -128,12 +168,20 @@ class ProductSync extends Component
 
 			$productId = isset($veeqoProduct['id']) && is_numeric($veeqoProduct['id']) ? (int) $veeqoProduct['id'] : 0;
 			$sellables = $veeqoProduct['sellables'] ?? [];
-			if ($productId === 0 || ! is_array($sellables)) {
+			if ($productId === 0) {
+				continue;
+			}
+
+			if (! is_array($sellables)) {
 				continue;
 			}
 
 			foreach ($sellables as $sellable) {
-				if (! is_array($sellable) || ($sellable['sku_code'] ?? null) !== $sku) {
+				if (! is_array($sellable)) {
+					continue;
+				}
+
+				if (($sellable['sku_code'] ?? null) !== $sku) {
 					continue;
 				}
 
@@ -148,32 +196,6 @@ class ProductSync extends Component
 		}
 
 		return null;
-	}
-
-	/**
-	 * Create a Veeqo sellable for a custom (non-purchasable) line item and return its sellable id,
-	 * or 0 when the create response carries no matching sellable. Keys on the line item's own SKU,
-	 * falling back to a synthetic id so the sellable is stable per line item.
-	 */
-	public function syncCustomLineItem(LineItem $lineItem, VeeqoProvider $provider): int
-	{
-		$sku = trim($lineItem->getSku());
-		if ($sku === '') {
-			$sku = 'custom-' . $lineItem->id;
-		}
-
-		$response = $provider->getClient()->post('/products', [
-			'title' => $lineItem->getDescription(),
-			'sellables_attributes' => [
-				[
-					'sku_code' => $sku,
-					'title' => $lineItem->getDescription(),
-					'price' => (float) $lineItem->salePrice,
-				],
-			],
-		]);
-
-		return $this->buildSellableIdIndexBySku($response)[$sku] ?? 0;
 	}
 
 	private function plugin(): Plugin
@@ -251,10 +273,12 @@ class ProductSync extends Component
 	 */
 	private function buildSellablePayload(Variant $variant): array
 	{
+		$currencyCode = (string) $variant->getStore()->getCurrency()?->getCode();
+
 		$attributes = [
 			'sku_code' => (string) $variant->sku,
 			'title' => (string) $variant->title,
-			'price' => (float) $variant->price,
+			'price' => $this->priceString((float) $variant->price, $currencyCode),
 		];
 
 		$weightGrams = $this->toGrams((float) $variant->weight);
@@ -263,6 +287,30 @@ class ProductSync extends Component
 		}
 
 		return $attributes;
+	}
+
+	/**
+	 * Format a price as the decimal string Veeqo expects, routing through Money so float dollar
+	 * values do not drift before they leave Craft.
+	 *
+	 * @throws PermanentIntegrationException
+	 */
+	private function priceString(float $amount, string $currencyCode): string
+	{
+		if ($currencyCode === '') {
+			throw new PermanentIntegrationException('Cannot format a Veeqo price without a store currency.');
+		}
+
+		$decimal = MoneyHelper::toDecimal([
+			'value' => (string) $amount,
+			'currency' => $currencyCode,
+		]);
+
+		if ($decimal === false) {
+			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");
+		}
+
+		return $decimal;
 	}
 
 	/**

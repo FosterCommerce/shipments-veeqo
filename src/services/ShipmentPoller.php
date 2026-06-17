@@ -105,7 +105,7 @@ class ShipmentPoller extends Component
 
 		$veeqoStatus = isset($veeqoOrder['status']) ? (string) $veeqoOrder['status'] : '';
 		$targetStatus = $this->mapStatus($veeqoStatus);
-		if ($targetStatus === null) {
+		if (! $targetStatus instanceof Status) {
 			return;
 		}
 

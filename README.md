@@ -14,7 +14,7 @@ A **Veeqo provider** for the Foster Commerce Shipments plugin, plus product sync
 
 - Craft CMS `^5.0`
 - Craft Commerce `^5.0`
-- [Foster Commerce Shipments](https://github.com/fostercommerce/shipments) `^1.0`
+- [Foster Commerce Shipments](https://github.com/fostercommerce/shipments) `dev-main`
 - PHP `^8.2`
 - A Veeqo account and API key
 
@@ -29,7 +29,7 @@ See [`docs/installation.md`](./docs/installation.md) for the full guide, includi
 
 ## Veeqo integration
 
-Veeqo registers as a provider on the Shipments plugin. You add it under **Shipments -> Settings -> Integrations -> New**, choosing Veeqo as the provider and entering your API key, channel id, and warehouse id. From there the Shipments plugin owns the shipment lifecycle (status, history, emails); this plugin only talks to the Veeqo API.
+Veeqo registers as a provider on the Shipments plugin. You add it under **Shipments -> Settings -> Integrations -> New**, choosing Veeqo as the provider and entering your API key and channel id. From there the Shipments plugin owns the shipment lifecycle (status, history, emails); this plugin only talks to the Veeqo API.
 
 ## Product sync
 

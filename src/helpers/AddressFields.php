@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace fostercommerce\shipmentsveeqo\helpers;
 
+use craft\base\FieldInterface;
 use craft\elements\Address;
 use fostercommerce\shipmentsveeqo\Plugin;
 
@@ -23,11 +24,13 @@ class AddressFields
 			return '';
 		}
 
-		if ($address->getFieldLayout()?->getFieldByHandle($handle) === null) {
+		if (! $address->getFieldLayout()?->getFieldByHandle($handle) instanceof FieldInterface) {
 			return '';
 		}
 
-		return (string) $address->getFieldValue($handle);
+		$value = $address->getFieldValue($handle);
+
+		return is_string($value) ? $value : '';
 	}
 
 	/**

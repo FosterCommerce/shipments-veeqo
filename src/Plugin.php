@@ -24,7 +24,6 @@ use fostercommerce\shipments\queue\jobs\PushShipmentJob;
 use fostercommerce\shipments\records\TrackedOrder;
 use fostercommerce\shipments\services\Integrations;
 use fostercommerce\shipments\services\Shipments;
-use yii\db\AfterSaveEvent;
 use fostercommerce\shipmentsveeqo\helpers\ProductImageFields;
 use fostercommerce\shipmentsveeqo\jobs\SyncProductJob;
 use fostercommerce\shipmentsveeqo\models\Settings;
@@ -38,6 +37,7 @@ use fostercommerce\shipmentsveeqo\services\StockSync;
 use Psr\Log\LogLevel;
 use Throwable;
 use yii\base\Event;
+use yii\db\AfterSaveEvent;
 
 /**
  * @property-read Settings $settings
@@ -206,13 +206,13 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		if ($event->toCode->value !== $triggerStatus || $event->sourceIntegration !== null) {
+		if ($event->toCode->value !== $triggerStatus || $event->sourceIntegration instanceof Integration) {
 			return;
 		}
 
 		$shipmentId = $event->shipment->id;
 		$provider = $this->getVeeqoProvider();
-		if ($shipmentId === null || $provider === null) {
+		if ($shipmentId === null || ! $provider instanceof VeeqoProvider) {
 			return;
 		}
 

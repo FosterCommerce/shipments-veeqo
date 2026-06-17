@@ -35,7 +35,7 @@
 		"php": "^8.2",
 		"craftcms/cms": "^5.0",
 		"craftcms/commerce": "^5.3",
-		"fostercommerce/shipments": "@dev",
+		"fostercommerce/shipments": "dev-main",
 		"guzzlehttp/guzzle": "^7.5"
 	},
 	"require-dev": {

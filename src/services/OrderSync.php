@@ -9,7 +9,9 @@ use craft\commerce\elements\Order;
 use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
+use craft\commerce\records\Transaction as TransactionRecord;
 use craft\elements\Address;
+use craft\helpers\MoneyHelper;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
@@ -34,11 +36,6 @@ use yii\base\Component;
 class OrderSync extends Component
 {
 	/**
-	 * Veeqo order create 504s past ~60 line items; cap below that.
-	 */
-	public const MAX_LINE_ITEMS = 50;
-
-	/**
 	 * @throws IntegrationException
 	 * @throws PermanentIntegrationException
 	 * @throws Throwable
@@ -49,59 +46,19 @@ class OrderSync extends Component
 			throw new PermanentIntegrationException('Cannot push an unsaved shipment to Veeqo.');
 		}
 
-		$handle = (string) $provider->handle;
-		$integration = $this->resolveIntegration($handle);
-
-		if ($this->alreadyPushed($shipment->id, (int) $integration->id)) {
-			Craft::info("Shipment {$shipment->id} already pushed to Veeqo; skipping.", Plugin::HANDLE);
-			return;
+		// Veeqo has no idempotency keys, so serialize the already-pushed check and the create. Without
+		// it a queue retry or a manual push racing the auto-push creates a second order.
+		$mutex = Craft::$app->getMutex();
+		$lockKey = 'shipments-veeqo:push:' . $shipment->id;
+		if (! $mutex->acquire($lockKey, 15)) {
+			throw new IntegrationException("Another push is in progress for shipment {$shipment->id}.");
 		}
-
-		if ($provider->channelId === null) {
-			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
-		}
-
-		$lineItemAttributes = $this->buildLineItemAttributes($shipment, $order, $provider);
-		if ($lineItemAttributes === []) {
-			throw new PermanentIntegrationException("Shipment {$shipment->id} has no Veeqo-mapped line items to push.");
-		}
-
-		$client = $provider->getClient();
 
 		try {
-			$customerId = $this->plugin()->customerResolver->resolveCustomerId($order, $client);
-
-			$response = $client->post('/orders', [
-				'order' => [
-					'channel_id' => $provider->channelId,
-					'customer_id' => $customerId,
-					'number' => $provider->orderIdPrefix . $shipment->reference,
-					'send_notification_email' => $provider->notifyCustomer,
-					'deliver_to_attributes' => $this->buildDeliverTo($order),
-					'line_items_attributes' => $lineItemAttributes,
-					// Veeqo has no settable status; a payment advances the order to awaiting_fulfillment so it can ship.
-					'payment_attributes' => [
-						'payment_type' => 'other',
-						'total_paid' => $order->getTotalPrice(),
-						'currency_code' => (string) $order->currency,
-					],
-				],
-			]);
-		} catch (VeeqoApiException $veeqoApiException) {
-			$this->rethrow($veeqoApiException);
+			$this->doPushShipment($shipment, $order, $provider);
+		} finally {
+			$mutex->release($lockKey);
 		}
-
-		$veeqoOrderId = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : 0;
-		if ($veeqoOrderId === 0) {
-			throw new PermanentIntegrationException("Veeqo order create for shipment {$shipment->id} returned no id.");
-		}
-
-		$this->shipments()->integrationReferences->setIntegrationReference(
-			$shipment,
-			$handle,
-			(string) $veeqoOrderId,
-			$integration->buildUrl((string) $veeqoOrderId),
-		);
 	}
 
 	/**
@@ -137,7 +94,7 @@ class OrderSync extends Component
 		}
 
 		$provider = $this->plugin()->getVeeqoProvider();
-		if ($provider === null) {
+		if (! $provider instanceof VeeqoProvider) {
 			return;
 		}
 
@@ -147,9 +104,9 @@ class OrderSync extends Component
 		}
 
 		$veeqoOrderId = 0;
-		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId($shipment->id) as $reference) {
-			if ($reference->integrationId === $integration->id && $reference->externalId !== '') {
-				$veeqoOrderId = (int) $reference->externalId;
+		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId($shipment->id) as $integrationReference) {
+			if ($integrationReference->integrationId === $integration->id && $integrationReference->externalId !== '') {
+				$veeqoOrderId = (int) $integrationReference->externalId;
 				break;
 			}
 		}
@@ -162,6 +119,67 @@ class OrderSync extends Component
 			'veeqoOrderId' => $veeqoOrderId,
 			'message' => "Craft shipment {$shipment->reference}: {$reason}. Please cancel this order in Veeqo.",
 		]));
+	}
+
+	/**
+	 * @throws IntegrationException
+	 * @throws PermanentIntegrationException
+	 * @throws Throwable
+	 */
+	private function doPushShipment(Shipment $shipment, Order $order, VeeqoProvider $provider): void
+	{
+		$handle = (string) $provider->handle;
+		$integration = $this->resolveIntegration($handle);
+
+		if ($this->alreadyPushed((int) $shipment->id, (int) $integration->id)) {
+			Craft::info("Shipment {$shipment->id} already pushed to Veeqo; skipping.", Plugin::HANDLE);
+			return;
+		}
+
+		if ($provider->channelId === null) {
+			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
+		}
+
+		$lineItemAttributes = $this->buildLineItemAttributes($shipment, $order, $provider);
+		if ($lineItemAttributes === []) {
+			throw new PermanentIntegrationException("Shipment {$shipment->id} has no Veeqo-mapped line items to push.");
+		}
+
+		$client = $provider->getClient();
+
+		try {
+			$customerId = $this->plugin()->customerResolver->resolveCustomerId($order, $client);
+
+			$response = $client->post('/orders', [
+				'order' => [
+					'channel_id' => $provider->channelId,
+					'customer_id' => $customerId,
+					'number' => $provider->orderIdPrefix . $shipment->reference,
+					'send_notification_email' => $provider->notifyCustomer,
+					'deliver_to_attributes' => $this->buildDeliverTo($order),
+					'line_items_attributes' => $lineItemAttributes,
+					// Veeqo has no settable status; including a payment marks the order paid so it leaves
+					// awaiting_payment. Veeqo derives the paid total from the line items, so none is sent.
+					'payment_attributes' => [
+						'payment_type' => $this->resolvePaymentType($order),
+					],
+				],
+			]);
+		} catch (VeeqoApiException $veeqoApiException) {
+			$this->rethrow($veeqoApiException);
+		}
+
+		$veeqoOrderId = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : 0;
+		if ($veeqoOrderId === 0) {
+			throw new PermanentIntegrationException("Veeqo order create for shipment {$shipment->id} returned no id.");
+		}
+
+		$this->shipments()->integrationReferences->setIntegrationReference(
+			$shipment,
+			$handle,
+			(string) $veeqoOrderId,
+			$integration->buildUrl((string) $veeqoOrderId),
+		);
 	}
 
 	/**
@@ -193,11 +211,13 @@ class OrderSync extends Component
 	 * Map each shipment line item to a Veeqo sellable, creating the sellable on demand so a push
 	 * never requires a separate product sync first.
 	 *
-	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: float}>
+	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: string}>
 	 * @throws PermanentIntegrationException
 	 */
 	private function buildLineItemAttributes(Shipment $shipment, Order $order, VeeqoProvider $provider): array
 	{
+		$currencyCode = (string) $order->currency;
+
 		$orderLineItemsById = [];
 		foreach ($order->getLineItems() as $lineItem) {
 			if ($lineItem->id !== null) {
@@ -219,17 +239,31 @@ class OrderSync extends Component
 			$attributes[] = [
 				'sellable_id' => $sellableId,
 				'quantity' => $shipmentLineItem->qty,
-				'price_per_unit' => (float) $lineItem->salePrice,
+				'price_per_unit' => $this->priceString((float) $lineItem->salePrice, $currencyCode),
 			];
 		}
 
-		if (count($attributes) > self::MAX_LINE_ITEMS) {
-			throw new PermanentIntegrationException(
-				'Shipment exceeds the Veeqo ' . self::MAX_LINE_ITEMS . '-line-item push limit.',
-			);
+		return $attributes;
+	}
+
+	/**
+	 * Format a price as the decimal string Veeqo expects, routing through Money so float dollar
+	 * values do not drift before they leave Craft.
+	 *
+	 * @throws PermanentIntegrationException
+	 */
+	private function priceString(float $amount, string $currencyCode): string
+	{
+		$decimal = MoneyHelper::toDecimal([
+			'value' => (string) $amount,
+			'currency' => $currencyCode,
+		]);
+
+		if ($decimal === false) {
+			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");
 		}
 
-		return $attributes;
+		return $decimal;
 	}
 
 	/**
@@ -309,6 +343,33 @@ class OrderSync extends Component
 			'country' => $address->countryCode,
 			'phone' => AddressFields::phone($address),
 		];
+	}
+
+	/**
+	 * Veeqo payment_type for the order, read from its last successful payment's gateway. Veeqo's enum
+	 * has no generic "paid online", so an unrecognised gateway reports none rather than mislabelling it.
+	 */
+	private function resolvePaymentType(Order $order): string
+	{
+		foreach (array_reverse($order->getTransactions()) as $transaction) {
+			$isSuccessfulPayment = $transaction->status === TransactionRecord::STATUS_SUCCESS
+				&& in_array($transaction->type, [TransactionRecord::TYPE_PURCHASE, TransactionRecord::TYPE_CAPTURE], true);
+			if (! $isSuccessfulPayment) {
+				continue;
+			}
+
+			$gateway = $transaction->getGateway();
+			$name = strtolower(($gateway?->handle ?? '') . ' ' . ($gateway?->name ?? ''));
+
+			return match (true) {
+				str_contains($name, 'paypal') => 'paypal',
+				str_contains($name, 'sagepay'), str_contains($name, 'opayo') => 'sagepay',
+				str_contains($name, 'bank') => 'bank_transfer',
+				default => 'none',
+			};
+		}
+
+		return 'none';
 	}
 
 	private function plugin(): Plugin

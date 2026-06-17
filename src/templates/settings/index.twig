@@ -19,7 +19,7 @@
 	instructions: 'settings.productImagesInstructions'|t('shipments-veeqo'),
 	name: 'settings[productImagesHandle]',
 	value: settings.productImagesHandle,
-	options: [{ label: '—', value: '' }]|merge(imageFieldOptions),
+	options: [{ label: 'settings.select.none'|t('shipments-veeqo'), value: '' }]|merge(imageFieldOptions),
 	errors: settings.getErrors('productImagesHandle'),
 }) }}
 
@@ -39,11 +39,11 @@
 	instructions: 'settings.phoneFieldInstructions'|t('shipments-veeqo'),
 	name: 'settings[phoneFieldHandle]',
 	value: settings.phoneFieldHandle,
-	options: [{ label: '—', value: '' }]|merge(plainTextFields),
+	options: [{ label: 'settings.select.none'|t('shipments-veeqo'), value: '' }]|merge(plainTextFields),
 	errors: settings.getErrors('phoneFieldHandle'),
 }) }}
 
-{% set statusFieldOptions = [{ label: '—', value: '' }] %}
+{% set statusFieldOptions = [{ label: 'settings.select.none'|t('shipments-veeqo'), value: '' }] %}
 {% for statusValue, statusLabel in statusOptions %}
 	{% set statusFieldOptions = statusFieldOptions|merge([{ label: statusLabel, value: statusValue }]) %}
 {% endfor %}

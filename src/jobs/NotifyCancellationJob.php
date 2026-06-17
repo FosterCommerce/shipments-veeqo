@@ -31,7 +31,7 @@ class NotifyCancellationJob extends BaseJob
 
 		try {
 			$provider = $plugin->getVeeqoProvider();
-		} catch (Throwable $throwable) {
+		} catch (Throwable) {
 			return;
 		}
 

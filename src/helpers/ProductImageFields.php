@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace fostercommerce\shipmentsveeqo\helpers;
 
 use Craft;
+use craft\base\FieldInterface;
 use craft\commerce\elements\Product;
 use craft\commerce\Plugin as Commerce;
 use craft\elements\Asset;
@@ -50,12 +51,12 @@ class ProductImageFields
 			return null;
 		}
 
-		if ($product->getFieldLayout()?->getFieldByHandle($handle) !== null) {
+		if ($product->getFieldLayout()?->getFieldByHandle($handle) instanceof FieldInterface) {
 			return self::firstAssetUrl($product->getFieldValue($handle));
 		}
 
 		foreach ($product->getVariants() as $variant) {
-			if ($variant->getFieldLayout()?->getFieldByHandle($handle) === null) {
+			if (! $variant->getFieldLayout()?->getFieldByHandle($handle) instanceof FieldInterface) {
 				continue;
 			}
 
@@ -85,7 +86,7 @@ class ProductImageFields
 
 			$seenHandles[$field->handle] = true;
 			$options[] = [
-				'label' => Craft::t('shipments-veeqo', $scopeKey) . ': ' . $field->name,
+				'label' => Craft::t(Plugin::HANDLE, $scopeKey) . ': ' . $field->name,
 				'value' => $field->handle,
 			];
 		}

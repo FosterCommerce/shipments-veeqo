@@ -97,7 +97,6 @@ class VeeqoProvider extends Provider
 				'integer',
 				'min' => 1],
 			[['notifyCustomer'], 'boolean'],
-			[['apiKey', 'channelId', 'notifyCustomer', 'orderIdPrefix', 'pollLookbackHours'], 'safe'],
 		]);
 	}
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 return [
 	// Plugin settings page
 	'settings.connectionNotice' => 'Veeqo credentials and shipment-push options are configured per integration under Shipments → Settings → Integrations. These options are plugin-wide.',
+	'settings.select.none' => '[None]',
 	'settings.syncProductsLabel' => 'Sync products to Veeqo',
 	'settings.syncProductsInstructions' => 'When on, saving a Commerce product enqueues a Veeqo sellable sync using the active Veeqo integration.',
 	'settings.productImagesLabel' => 'Product images field',

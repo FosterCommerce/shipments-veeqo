@@ -6,7 +6,7 @@ A Veeqo provider for the Foster Commerce Shipments plugin, plus product sync bet
 
 - Craft CMS `^5.0`
 - Craft Commerce `^5.0`
-- Foster Commerce Shipments `^1.0` (installed and enabled first)
+- Foster Commerce Shipments `dev-main` (installed and enabled first)
 - PHP `^8.2`
 - A running Craft queue worker (product syncs and shipment pushes run as queued jobs)
 - A Veeqo account with API access
@@ -45,6 +45,8 @@ A `200 OK` confirms the key is live.
 - **Sync products to Veeqo**: when on, saving a Commerce product queues a Veeqo sellable sync. Default: on.
 - **Product images field**: asset field whose images are sent with the product payload. Default: none.
 - **Let Veeqo adjust Commerce inventory**: when on, the stock pull overwrites inventory counts for inventory-tracked variants from Veeqo. Non-tracked variants are never changed. Default: on.
+- **Address phone field**: plain-text address field holding the customer phone, sent with orders and customers. Default: none.
+- **Auto-push to Veeqo at status**: when a shipment reaches this status, push it to Veeqo automatically. Default: none (push only with the manual button).
 
 ## Add the Veeqo integration
 

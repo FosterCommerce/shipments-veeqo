@@ -40,8 +40,6 @@ class VeeqoApi extends Component
 	 */
 	public const MIN_REQUEST_INTERVAL_SECONDS = 0.25;
 
-	private ?float $lastRequestAt = null;
-
 	/**
 	 * Header carrying the total page count on paginated list responses.
 	 */
@@ -51,6 +49,8 @@ class VeeqoApi extends Component
 	 * API key or `$ENV_VAR` reference; resolved through `App::parseEnv` before each request.
 	 */
 	public string $apiKey = '';
+
+	private ?float $lastRequestAt = null;
 
 	private ?GuzzleClient $guzzleClient = null;
 
