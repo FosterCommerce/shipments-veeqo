@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace fostercommerce\shipmentsveeqo\services;
 
 use craft\commerce\elements\Order;
+use craft\elements\Address;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
+use fostercommerce\shipmentsveeqo\helpers\AddressFields;
 use yii\base\Component;
 
 /**
@@ -33,9 +35,7 @@ class CustomerResolver extends Component
 			return $existingId;
 		}
 
-		$response = $client->post('/customers', [
-			'email' => $email,
-		]);
+		$response = $client->post('/customers', $this->buildCustomerPayload($order, $email));
 
 		$id = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : null;
 		if ($id === null) {
@@ -43,6 +43,40 @@ class CustomerResolver extends Component
 		}
 
 		return $id;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function buildCustomerPayload(Order $order, string $email): array
+	{
+		$payload = [
+			'email' => $email,
+			'customer_type' => 'retail',
+		];
+
+		$address = $order->getBillingAddress() ?? $order->getShippingAddress();
+		if (! $address instanceof Address) {
+			return $payload;
+		}
+
+		$phone = AddressFields::phone($address);
+		if ($phone !== '') {
+			$payload['phone'] = $phone;
+		}
+
+		$payload['billing_address_attributes'] = [
+			'first_name' => AddressFields::firstName($address),
+			'last_name' => (string) $address->lastName,
+			'company' => (string) $address->organization,
+			'address1' => (string) $address->addressLine1,
+			'address2' => (string) $address->addressLine2,
+			'city' => (string) $address->locality,
+			'country' => $address->countryCode,
+			'zip' => (string) $address->postalCode,
+		];
+
+		return $payload;
 	}
 
 	/**

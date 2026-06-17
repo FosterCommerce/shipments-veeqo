@@ -6,6 +6,8 @@ namespace fostercommerce\shipmentsveeqo\services;
 
 use Craft;
 use craft\commerce\elements\Order;
+use craft\commerce\elements\Product;
+use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\elements\Address;
 use fostercommerce\shipments\elements\Shipment;
@@ -14,6 +16,8 @@ use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\Plugin as ShipmentsPlugin;
 use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
+use fostercommerce\shipmentsveeqo\helpers\AddressFields;
+use fostercommerce\shipmentsveeqo\jobs\NotifyCancellationJob;
 use fostercommerce\shipmentsveeqo\Plugin;
 use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
 use fostercommerce\shipmentsveeqo\records\SellableMapping;
@@ -57,7 +61,7 @@ class OrderSync extends Component
 			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
 		}
 
-		$lineItemAttributes = $this->buildLineItemAttributes($shipment, $order);
+		$lineItemAttributes = $this->buildLineItemAttributes($shipment, $order, $provider);
 		if ($lineItemAttributes === []) {
 			throw new PermanentIntegrationException("Shipment {$shipment->id} has no Veeqo-mapped line items to push.");
 		}
@@ -71,6 +75,7 @@ class OrderSync extends Component
 				'order' => [
 					'channel_id' => $provider->channelId,
 					'customer_id' => $customerId,
+					'number' => $provider->orderIdPrefix . $shipment->reference,
 					'send_notification_email' => $provider->notifyCustomer,
 					'deliver_to_attributes' => $this->buildDeliverTo($order),
 					'line_items_attributes' => $lineItemAttributes,
@@ -100,6 +105,66 @@ class OrderSync extends Component
 	}
 
 	/**
+	 * Queues a note on the Veeqo order behind every shipment of a Craft order. Used when the order
+	 * is deleted or stops requiring shipping; Veeqo can't be cancelled via API, so we flag it.
+	 *
+	 * @throws Throwable
+	 */
+	public function queueCancellationNotesForOrder(int $orderId, string $reason): void
+	{
+		$shipmentsService = $this->shipments()->shipments;
+		$shipments = [
+			...$shipmentsService->findByOrderId($orderId),
+			...$shipmentsService->findTrashedByOrderId($orderId),
+		];
+
+		foreach ($shipments as $shipment) {
+			if ($shipment instanceof Shipment) {
+				$this->queueCancellationNoteForShipment($shipment, $reason);
+			}
+		}
+	}
+
+	/**
+	 * Queues a note on the Veeqo order behind a shipment. No-op when the shipment was never pushed.
+	 *
+	 * @throws Throwable
+	 */
+	public function queueCancellationNoteForShipment(Shipment $shipment, string $reason): void
+	{
+		if ($shipment->id === null) {
+			return;
+		}
+
+		$provider = $this->plugin()->getVeeqoProvider();
+		if ($provider === null) {
+			return;
+		}
+
+		$integration = $this->shipments()->integrations->getIntegrationByHandle((string) $provider->handle);
+		if (! $integration instanceof Integration || $integration->id === null) {
+			return;
+		}
+
+		$veeqoOrderId = 0;
+		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId($shipment->id) as $reference) {
+			if ($reference->integrationId === $integration->id && $reference->externalId !== '') {
+				$veeqoOrderId = (int) $reference->externalId;
+				break;
+			}
+		}
+
+		if ($veeqoOrderId === 0) {
+			return;
+		}
+
+		Craft::$app->getQueue()->push(new NotifyCancellationJob([
+			'veeqoOrderId' => $veeqoOrderId,
+			'message' => "Craft shipment {$shipment->reference}: {$reason}. Please cancel this order in Veeqo.",
+		]));
+	}
+
+	/**
 	 * @throws PermanentIntegrationException
 	 */
 	private function resolveIntegration(string $handle): Integration
@@ -125,12 +190,13 @@ class OrderSync extends Component
 	}
 
 	/**
-	 * Map each shipment line item to a Veeqo sellable via the mapping table.
+	 * Map each shipment line item to a Veeqo sellable, creating the sellable on demand so a push
+	 * never requires a separate product sync first.
 	 *
 	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: float}>
 	 * @throws PermanentIntegrationException
 	 */
-	private function buildLineItemAttributes(Shipment $shipment, Order $order): array
+	private function buildLineItemAttributes(Shipment $shipment, Order $order, VeeqoProvider $provider): array
 	{
 		$orderLineItemsById = [];
 		foreach ($order->getLineItems() as $lineItem) {
@@ -139,8 +205,6 @@ class OrderSync extends Component
 			}
 		}
 
-		$sellableMappings = $this->plugin()->sellableMappings;
-
 		$attributes = [];
 		foreach ($shipment->getLineItems() as $shipmentLineItem) {
 			$lineItem = $orderLineItemsById[$shipmentLineItem->lineItemId] ?? null;
@@ -148,19 +212,12 @@ class OrderSync extends Component
 				continue;
 			}
 
-			if ($lineItem->purchasableId === null) {
-				continue;
-			}
-
-			$mapping = $sellableMappings->findByPurchasableId($lineItem->purchasableId);
-			if (! $mapping instanceof SellableMapping) {
-				throw new PermanentIntegrationException(
-					"Purchasable {$lineItem->purchasableId} is not synced to Veeqo; sync products before pushing.",
-				);
-			}
+			$sellableId = $lineItem->purchasableId === null
+				? $this->resolveCustomSellableId($lineItem, $provider)
+				: $this->resolvePurchasableSellableId($lineItem, $provider);
 
 			$attributes[] = [
-				'sellable_id' => $mapping->veeqoSellableId,
+				'sellable_id' => $sellableId,
 				'quantity' => $shipmentLineItem->qty,
 				'price_per_unit' => (float) $lineItem->salePrice,
 			];
@@ -176,6 +233,61 @@ class OrderSync extends Component
 	}
 
 	/**
+	 * Resolve a purchasable line item to its Veeqo sellable id, syncing the product on demand
+	 * when no mapping exists yet.
+	 *
+	 * @throws PermanentIntegrationException when the variant cannot be synced (e.g. no SKU)
+	 */
+	private function resolvePurchasableSellableId(LineItem $lineItem, VeeqoProvider $provider): int
+	{
+		$sellableMappings = $this->plugin()->sellableMappings;
+		$purchasableId = (int) $lineItem->purchasableId;
+
+		$mapping = $sellableMappings->findByPurchasableId($purchasableId);
+		if ($mapping instanceof SellableMapping) {
+			return $mapping->veeqoSellableId;
+		}
+
+		$variant = Craft::$app->getElements()->getElementById($purchasableId, Variant::class);
+		$product = $variant instanceof Variant ? $variant->getProduct() : null;
+		if (! $product instanceof Product) {
+			throw new PermanentIntegrationException(
+				"Purchasable {$purchasableId} is not a Commerce product variant; cannot sync to Veeqo.",
+			);
+		}
+
+		$this->plugin()->productSync->syncProduct($product, $provider);
+
+		$mapping = $sellableMappings->findByPurchasableId($purchasableId);
+		if (! $mapping instanceof SellableMapping) {
+			throw new PermanentIntegrationException(
+				"Purchasable {$purchasableId} could not be synced to Veeqo; check that the variant has a SKU.",
+			);
+		}
+
+		return $mapping->veeqoSellableId;
+	}
+
+	/**
+	 * Create a one-off Veeqo sellable for a custom (non-purchasable) line item and return its id.
+	 * Custom items have no purchasable to cache against and belong to a single order, so the
+	 * sellable is created fresh per push.
+	 *
+	 * @throws PermanentIntegrationException
+	 */
+	private function resolveCustomSellableId(LineItem $lineItem, VeeqoProvider $provider): int
+	{
+		$sellableId = $this->plugin()->productSync->syncCustomLineItem($lineItem, $provider);
+		if ($sellableId === 0) {
+			throw new PermanentIntegrationException(
+				"Custom line item {$lineItem->id} could not be created as a Veeqo sellable.",
+			);
+		}
+
+		return $sellableId;
+	}
+
+	/**
 	 * @return array<string, mixed>
 	 */
 	private function buildDeliverTo(Order $order): array
@@ -186,7 +298,8 @@ class OrderSync extends Component
 		}
 
 		return [
-			'first_name' => (string) $address->fullName,
+			'first_name' => AddressFields::firstName($address),
+			'last_name' => (string) $address->lastName,
 			'company' => (string) $address->organization,
 			'address1' => (string) $address->addressLine1,
 			'address2' => (string) $address->addressLine2,
@@ -194,7 +307,7 @@ class OrderSync extends Component
 			'state' => (string) $address->administrativeArea,
 			'zip' => (string) $address->postalCode,
 			'country' => $address->countryCode,
-			'email' => (string) $order->getEmail(),
+			'phone' => AddressFields::phone($address),
 		];
 	}
 

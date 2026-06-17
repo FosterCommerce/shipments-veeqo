@@ -50,7 +50,7 @@ class ShipmentPoller extends Component
 			->format(DateTime::ATOM);
 
 		// Veeqo rejects multiple statuses in one query, so poll each separately.
-		foreach (['shipped', 'partially_shipped'] as $status) {
+		foreach (['shipped', 'partially_shipped', 'cancelled'] as $status) {
 			$this->pollStatus($client, $status, $createdAtMin, $handle, $integration);
 		}
 	}
@@ -98,20 +98,33 @@ class ShipmentPoller extends Component
 			->integrationReferences
 			->findByIntegrationReference($handle, (string) $veeqoOrderId);
 		if (! $shipment instanceof Shipment) {
+			// Expected for Veeqo orders that did not originate from this Craft store.
+			Craft::info("Veeqo order {$veeqoOrderId}: no matching Craft shipment; skipped.", Plugin::HANDLE);
 			return;
 		}
 
-		$tracking = $this->extractTracking($veeqoOrder);
-		if ($tracking === null) {
+		$veeqoStatus = isset($veeqoOrder['status']) ? (string) $veeqoOrder['status'] : '';
+		$targetStatus = $this->mapStatus($veeqoStatus);
+		if ($targetStatus === null) {
 			return;
 		}
 
 		$payload = new ShipmentUpdatePayload();
-		$payload->trackingNumber = $tracking['trackingNumber'];
-		$payload->trackingUrl = $tracking['trackingUrl'];
-		$payload->carrier = $tracking['carrier'];
-		$payload->service = $tracking['service'];
-		$payload->targetStatusCode = Status::Shipped->value;
+		$payload->targetStatusCode = $targetStatus->value;
+
+		// Only the shipped path carries tracking; a cancellation flips status with none.
+		if ($targetStatus === Status::Shipped) {
+			$tracking = $this->extractTracking($veeqoOrder);
+			if ($tracking === null) {
+				Craft::warning("Veeqo order {$veeqoOrderId} matched shipment {$shipment->id} but has no tracking number; skipped.", Plugin::HANDLE);
+				return;
+			}
+
+			$payload->trackingNumber = $tracking['trackingNumber'];
+			$payload->trackingUrl = $tracking['trackingUrl'];
+			$payload->carrier = $tracking['carrier'];
+			$payload->service = $tracking['service'];
+		}
 
 		if (! $payload->validate()) {
 			Craft::warning(
@@ -121,7 +134,7 @@ class ShipmentPoller extends Component
 			return;
 		}
 
-		$externalCode = isset($veeqoOrder['status']) ? (string) $veeqoOrder['status'] : Status::Shipped->value;
+		$externalCode = $veeqoStatus !== '' ? $veeqoStatus : $targetStatus->value;
 
 		try {
 			$this->shipments()->shipments->applyUpdate($shipment, $payload, null, $integration, $externalCode);
@@ -131,6 +144,15 @@ class ShipmentPoller extends Component
 				Plugin::HANDLE,
 			);
 		}
+	}
+
+	private function mapStatus(string $veeqoStatus): ?Status
+	{
+		return match ($veeqoStatus) {
+			'shipped', 'partially_shipped' => Status::Shipped,
+			'cancelled' => Status::Cancelled,
+			default => null,
+		};
 	}
 
 	/**
@@ -158,7 +180,13 @@ class ShipmentPoller extends Component
 				continue;
 			}
 
-			$trackingNumber = isset($shipment['tracking_number']) ? trim((string) $shipment['tracking_number']) : '';
+			// Veeqo nests the tracking number inside a tracking_number object ({tracking_number: "..."}).
+			$trackingField = $shipment['tracking_number'] ?? null;
+			$trackingNumber = match (true) {
+				is_array($trackingField) => trim((string) ($trackingField['tracking_number'] ?? '')),
+				is_string($trackingField) => trim($trackingField),
+				default => '',
+			};
 			if ($trackingNumber === '') {
 				continue;
 			}

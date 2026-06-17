@@ -27,6 +27,22 @@ class VeeqoApi extends Component
 	public const DEFAULT_TIMEOUT = 30.0;
 
 	/**
+	 * Veeqo rate-limits to 5 req/s (leaky bucket) and sends no Retry-After, so a 429 is retried
+	 * after a fixed pause to let the bucket refill rather than failing a bulk sync mid-run.
+	 */
+	public const RATE_LIMIT_RETRIES = 4;
+
+	public const RATE_LIMIT_RETRY_SECONDS = 2;
+
+	/**
+	 * Minimum gap between requests, holding the client just under Veeqo's 5 req/s so bulk syncs
+	 * stay below the rate limit instead of bursting into 429s.
+	 */
+	public const MIN_REQUEST_INTERVAL_SECONDS = 0.25;
+
+	private ?float $lastRequestAt = null;
+
+	/**
 	 * Header carrying the total page count on paginated list responses.
 	 */
 	public const TOTAL_PAGES_HEADER = 'X-Total-Pages-Count';
@@ -119,13 +135,21 @@ class VeeqoApi extends Component
 	 * @param array<string, mixed> $options
 	 * @throws VeeqoApiException
 	 */
-	private function send(string $method, string $path, array $options): ResponseInterface
+	private function send(string $method, string $path, array $options, int $attempt = 1): ResponseInterface
 	{
+		$this->throttle();
+
 		try {
 			return $this->getGuzzleClient()->request($method, $path, $options);
 		} catch (BadResponseException $badResponseException) {
 			$response = $badResponseException->getResponse();
 			$status = $response->getStatusCode();
+
+			if ($status === 429 && $attempt <= self::RATE_LIMIT_RETRIES) {
+				sleep(self::RATE_LIMIT_RETRY_SECONDS);
+				return $this->send($method, $path, $options, $attempt + 1);
+			}
+
 			$body = (string) $response->getBody();
 
 			// Veeqo sends no Retry-After on 429; capture it anyway in case that changes.
@@ -140,6 +164,18 @@ class VeeqoApi extends Component
 			Craft::error('Veeqo API ' . $method . ' ' . $path . ' transport error: ' . $guzzleException->getMessage(), Plugin::HANDLE);
 			throw new VeeqoApiException(0, $guzzleException->getMessage(), '', $guzzleException);
 		}
+	}
+
+	private function throttle(): void
+	{
+		if ($this->lastRequestAt !== null) {
+			$secondsToWait = self::MIN_REQUEST_INTERVAL_SECONDS - (microtime(true) - $this->lastRequestAt);
+			if ($secondsToWait > 0) {
+				usleep((int) ($secondsToWait * 1_000_000));
+			}
+		}
+
+		$this->lastRequestAt = microtime(true);
 	}
 
 	/**

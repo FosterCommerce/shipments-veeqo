@@ -7,7 +7,11 @@ namespace fostercommerce\shipmentsveeqo\services;
 use Craft;
 use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
+use craft\commerce\models\LineItem;
+use craft\commerce\Plugin as Commerce;
+use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
 use fostercommerce\shipmentsveeqo\events\ProductPayloadEvent;
+use fostercommerce\shipmentsveeqo\helpers\ProductImageFields;
 use fostercommerce\shipmentsveeqo\Plugin;
 use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
 use fostercommerce\shipmentsveeqo\records\SellableMapping;
@@ -28,7 +32,14 @@ class ProductSync extends Component
 	public function syncProduct(Product $product, VeeqoProvider $provider): void
 	{
 		$client = $provider->getClient();
+
 		$existingMapping = $this->findExistingMapping($product);
+		if (! $existingMapping instanceof SellableMapping) {
+			// Link to a product already in Veeqo (matched by SKU) so a first sync against a
+			// populated account updates it rather than creating a duplicate.
+			$this->reconcile($product, $provider);
+			$existingMapping = $this->findExistingMapping($product);
+		}
 
 		$payload = $this->buildPayload($product);
 		$productPayloadEvent = new ProductPayloadEvent([
@@ -46,6 +57,123 @@ class ProductSync extends Component
 
 		$response = $client->put('/products/' . $existingMapping->veeqoProductId, $payload);
 		$this->persistMappingsFromResponse($product, $response);
+	}
+
+	/**
+	 * Link a product's variants to sellables already in Veeqo by exact SKU match, recording the
+	 * mapping without creating anything in Veeqo. A lookup that errors (timeout, rate limit) is
+	 * collected as failed rather than aborting the run, so a bulk reconcile finishes.
+	 *
+	 * @return array{linked: list<string>, unmatched: list<string>, failed: list<string>}
+	 */
+	public function reconcile(Product $product, VeeqoProvider $provider): array
+	{
+		$sellableMappings = $this->plugin()->sellableMappings;
+
+		$linked = [];
+		$unmatched = [];
+		$failed = [];
+		foreach ($product->getVariants() as $variant) {
+			$sku = trim((string) $variant->sku);
+			if ($sku === '' || $variant->id === null) {
+				continue;
+			}
+
+			if ($sellableMappings->findByPurchasableId($variant->id) !== null) {
+				continue;
+			}
+
+			try {
+				$match = $this->findSellableBySku($sku, $provider);
+			} catch (VeeqoApiException $veeqoApiException) {
+				Craft::warning("Veeqo reconcile lookup failed for SKU {$sku}: " . $veeqoApiException->getMessage(), Plugin::HANDLE);
+				$failed[] = $sku;
+				continue;
+			}
+
+			if ($match === null) {
+				$unmatched[] = $sku;
+				continue;
+			}
+
+			$sellableMappings->upsert($variant->id, $sku, $match['sellableId'], $match['productId']);
+			$linked[] = $sku;
+		}
+
+		return [
+			'linked' => $linked,
+			'unmatched' => $unmatched,
+			'failed' => $failed,
+		];
+	}
+
+	/**
+	 * Veeqo sellable and parent product ids for an exact SKU match, or null when none is found.
+	 * Veeqo's product search is free text over name and SKU, so results are filtered to an exact
+	 * (case-sensitive) sku_code match, mirroring how Veeqo treats SKUs.
+	 *
+	 * @return array{sellableId: int, productId: int}|null
+	 */
+	private function findSellableBySku(string $sku, VeeqoProvider $provider): ?array
+	{
+		$veeqoProducts = $provider->getClient()->get('/products', [
+			'query' => $sku,
+			'page_size' => 100,
+		]);
+
+		foreach ($veeqoProducts as $veeqoProduct) {
+			if (! is_array($veeqoProduct)) {
+				continue;
+			}
+
+			$productId = isset($veeqoProduct['id']) && is_numeric($veeqoProduct['id']) ? (int) $veeqoProduct['id'] : 0;
+			$sellables = $veeqoProduct['sellables'] ?? [];
+			if ($productId === 0 || ! is_array($sellables)) {
+				continue;
+			}
+
+			foreach ($sellables as $sellable) {
+				if (! is_array($sellable) || ($sellable['sku_code'] ?? null) !== $sku) {
+					continue;
+				}
+
+				$sellableId = isset($sellable['id']) && is_numeric($sellable['id']) ? (int) $sellable['id'] : 0;
+				if ($sellableId !== 0) {
+					return [
+						'sellableId' => $sellableId,
+						'productId' => $productId,
+					];
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Create a Veeqo sellable for a custom (non-purchasable) line item and return its sellable id,
+	 * or 0 when the create response carries no matching sellable. Keys on the line item's own SKU,
+	 * falling back to a synthetic id so the sellable is stable per line item.
+	 */
+	public function syncCustomLineItem(LineItem $lineItem, VeeqoProvider $provider): int
+	{
+		$sku = trim($lineItem->getSku());
+		if ($sku === '') {
+			$sku = 'custom-' . $lineItem->id;
+		}
+
+		$response = $provider->getClient()->post('/products', [
+			'title' => $lineItem->getDescription(),
+			'sellables_attributes' => [
+				[
+					'sku_code' => $sku,
+					'title' => $lineItem->getDescription(),
+					'price' => (float) $lineItem->salePrice,
+				],
+			],
+		]);
+
+		return $this->buildSellableIdIndexBySku($response)[$sku] ?? 0;
 	}
 
 	private function plugin(): Plugin
@@ -97,10 +225,22 @@ class ProductSync extends Component
 			$sellablePayloads[] = $this->buildSellablePayload($variant);
 		}
 
-		return [
+		$payload = [
 			'title' => (string) $product->title,
 			'sellables_attributes' => $sellablePayloads,
 		];
+
+		$imageUrl = ProductImageFields::firstUrl($product);
+		if ($imageUrl !== null) {
+			$payload['images_attributes'] = [
+				[
+					'src' => $imageUrl,
+					'display_position' => '1',
+				],
+			];
+		}
+
+		return $payload;
 	}
 
 	/**
@@ -117,12 +257,29 @@ class ProductSync extends Component
 			'price' => (float) $variant->price,
 		];
 
-		$weightGrams = (float) $variant->weight;
+		$weightGrams = $this->toGrams((float) $variant->weight);
 		if ($weightGrams > 0) {
-			$attributes['weight_grams'] = (int) round($weightGrams);
+			$attributes['weight_grams'] = $weightGrams;
 		}
 
 		return $attributes;
+	}
+
+	/**
+	 * Convert a Commerce weight to grams using the store's configured weight unit; Veeqo only
+	 * accepts weight_grams, so sending the raw value would mis-scale lb/kg weights.
+	 */
+	private function toGrams(float $weight): int
+	{
+		/** @var Commerce $commerce */
+		$commerce = Commerce::getInstance();
+		$gramsPerUnit = match ($commerce->getSettings()->weightUnits) {
+			'kg' => 1000.0,
+			'lb' => 453.59237,
+			default => 1.0,
+		};
+
+		return (int) round($weight * $gramsPerUnit);
 	}
 
 	/**

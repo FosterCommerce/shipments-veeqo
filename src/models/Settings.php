@@ -28,13 +28,23 @@ class Settings extends Model
 	public bool $syncStock = true;
 
 	/**
+	 * Address field handle holding the customer phone, sent with orders and customers. Null skips phone.
+	 */
+	public ?string $phoneFieldHandle = null;
+
+	/**
+	 * Shipment status that auto-pushes to Veeqo when reached. Null disables auto-push.
+	 */
+	public ?string $autoPushStatus = null;
+
+	/**
 	 * @return array<array-key, mixed>
 	 */
 	protected function defineRules(): array
 	{
 		return [
 			[['syncProducts', 'syncStock'], 'boolean'],
-			[['productImagesHandle'], 'string'],
+			[['productImagesHandle', 'phoneFieldHandle', 'autoPushStatus'], 'string'],
 		];
 	}
 }

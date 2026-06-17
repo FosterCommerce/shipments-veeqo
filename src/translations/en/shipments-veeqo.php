@@ -8,9 +8,18 @@ return [
 	'settings.syncProductsLabel' => 'Sync products to Veeqo',
 	'settings.syncProductsInstructions' => 'When on, saving a Commerce product enqueues a Veeqo sellable sync using the active Veeqo integration.',
 	'settings.productImagesLabel' => 'Product images field',
-	'settings.productImagesInstructions' => 'Asset field whose images are sent with the product payload. Leave empty to skip images.',
+	'settings.productImagesInstructions' => 'Asset field whose first image is sent with the product. Each option is labelled by where the field lives (Product or Variant). Leave empty to skip images.',
+	'settings.imageField.productScope' => 'Product',
+	'settings.imageField.variantScope' => 'Variant',
 	'settings.syncStockLabel' => 'Let Veeqo adjust Commerce inventory',
 	'settings.syncStockInstructions' => 'When on, the Veeqo stock pull overwrites inventory counts for inventory-tracked variants. Non-tracked variants are never changed.',
+	'settings.phoneFieldLabel' => 'Address phone field',
+	'settings.phoneFieldInstructions' => 'Plain text address field holding the customer phone, sent with orders and customers. Leave empty to skip phone.',
+	'settings.autoPushStatusLabel' => 'Auto-push to Veeqo at status',
+	'settings.autoPushStatusInstructions' => 'When a shipment reaches this status, push it to Veeqo automatically. Leave empty to push only with the manual button.',
+
+	// Queue jobs
+	'queue.notifyCancellation' => 'Notifying Veeqo of a cancellation',
 
 	// Provider settings (integration edit page)
 	'provider.apiKeyLabel' => 'API key',

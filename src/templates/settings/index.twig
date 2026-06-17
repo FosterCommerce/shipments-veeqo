@@ -14,14 +14,12 @@
 	errors: settings.getErrors('syncProducts'),
 }) }}
 
-{% set assetFields = craft.app.fields.allFields|filter(field => className(field) == 'craft\\fields\\Assets')|map(field => { label: field.name, value: field.handle }) %}
-
 {{ forms.selectField({
 	label: 'settings.productImagesLabel'|t('shipments-veeqo'),
 	instructions: 'settings.productImagesInstructions'|t('shipments-veeqo'),
 	name: 'settings[productImagesHandle]',
 	value: settings.productImagesHandle,
-	options: [{ label: '—', value: '' }]|merge(assetFields),
+	options: [{ label: '—', value: '' }]|merge(imageFieldOptions),
 	errors: settings.getErrors('productImagesHandle'),
 }) }}
 
@@ -31,4 +29,30 @@
 	name: 'settings[syncStock]',
 	on: settings.syncStock,
 	errors: settings.getErrors('syncStock'),
+}) }}
+
+{% set addressLayout = craft.app.fields.getLayoutByType('craft\\elements\\Address') %}
+{% set plainTextFields = addressLayout.getCustomFields()|filter(field => className(field) == 'craft\\fields\\PlainText')|map(field => { label: field.name, value: field.handle }) %}
+
+{{ forms.selectField({
+	label: 'settings.phoneFieldLabel'|t('shipments-veeqo'),
+	instructions: 'settings.phoneFieldInstructions'|t('shipments-veeqo'),
+	name: 'settings[phoneFieldHandle]',
+	value: settings.phoneFieldHandle,
+	options: [{ label: '—', value: '' }]|merge(plainTextFields),
+	errors: settings.getErrors('phoneFieldHandle'),
+}) }}
+
+{% set statusFieldOptions = [{ label: '—', value: '' }] %}
+{% for statusValue, statusLabel in statusOptions %}
+	{% set statusFieldOptions = statusFieldOptions|merge([{ label: statusLabel, value: statusValue }]) %}
+{% endfor %}
+
+{{ forms.selectField({
+	label: 'settings.autoPushStatusLabel'|t('shipments-veeqo'),
+	instructions: 'settings.autoPushStatusInstructions'|t('shipments-veeqo'),
+	name: 'settings[autoPushStatus]',
+	value: settings.autoPushStatus,
+	options: statusFieldOptions,
+	errors: settings.getErrors('autoPushStatus'),
 }) }}
