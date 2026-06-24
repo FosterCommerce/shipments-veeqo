@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\helpers\App;
 use craft\helpers\Json;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\Plugin;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\Plugin;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Exception\GuzzleException;

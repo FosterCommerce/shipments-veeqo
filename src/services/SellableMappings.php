@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\helpers\DateTimeHelper;
 use craft\helpers\Json;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\records\SellableMapping;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\records\SellableMapping;
 use yii\base\Component;
 use yii\base\Exception;
 

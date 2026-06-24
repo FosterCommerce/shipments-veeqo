@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\tests\unit\services;
+namespace fostercommerce\shipments\veeqo\tests\unit\services;
 
-use fostercommerce\shipmentsveeqo\services\ShipmentPoller;
+use fostercommerce\shipments\veeqo\services\ShipmentPoller;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 

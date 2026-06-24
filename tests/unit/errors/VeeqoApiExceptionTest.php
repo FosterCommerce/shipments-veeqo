@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\tests\unit\errors;
+namespace fostercommerce\shipments\veeqo\tests\unit\errors;
 
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use PHPUnit\Framework\TestCase;
 
 final class VeeqoApiExceptionTest extends TestCase

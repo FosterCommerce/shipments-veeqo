@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo;
+namespace fostercommerce\shipments\veeqo;
 
 use Craft;
 use craft\base\Model;
@@ -24,16 +24,16 @@ use fostercommerce\shipments\queue\jobs\PushShipmentJob;
 use fostercommerce\shipments\records\TrackedOrder;
 use fostercommerce\shipments\services\Integrations;
 use fostercommerce\shipments\services\Shipments;
-use fostercommerce\shipmentsveeqo\helpers\ProductImageFields;
-use fostercommerce\shipmentsveeqo\jobs\SyncProductJob;
-use fostercommerce\shipmentsveeqo\models\Settings;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
-use fostercommerce\shipmentsveeqo\services\CustomerResolver;
-use fostercommerce\shipmentsveeqo\services\OrderSync;
-use fostercommerce\shipmentsveeqo\services\ProductSync;
-use fostercommerce\shipmentsveeqo\services\SellableMappings;
-use fostercommerce\shipmentsveeqo\services\ShipmentPoller;
-use fostercommerce\shipmentsveeqo\services\StockSync;
+use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
+use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
+use fostercommerce\shipments\veeqo\models\Settings;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\services\CustomerResolver;
+use fostercommerce\shipments\veeqo\services\OrderSync;
+use fostercommerce\shipments\veeqo\services\ProductSync;
+use fostercommerce\shipments\veeqo\services\SellableMappings;
+use fostercommerce\shipments\veeqo\services\ShipmentPoller;
+use fostercommerce\shipments\veeqo\services\StockSync;
 use Psr\Log\LogLevel;
 use Throwable;
 use yii\base\Event;
@@ -78,7 +78,7 @@ class Plugin extends \craft\base\Plugin
 		]);
 
 		if (Craft::$app instanceof ConsoleApplication) {
-			$this->controllerNamespace = 'fostercommerce\\shipmentsveeqo\\console\\controllers';
+			$this->controllerNamespace = 'fostercommerce\\shipments\\veeqo\\console\\controllers';
 		}
 
 		Event::on(

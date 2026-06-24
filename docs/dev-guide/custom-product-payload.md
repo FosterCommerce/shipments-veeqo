@@ -4,7 +4,7 @@ How to change the product and sellable data sent to Veeqo before it leaves Craft
 
 ## The contract
 
-`ProductSync` triggers `ProductSync::EVENT_BEFORE_SEND_PAYLOAD` after it builds the payload and before it calls the Veeqo API. The event is a `fostercommerce\shipmentsveeqo\events\ProductPayloadEvent`:
+`ProductSync` triggers `ProductSync::EVENT_BEFORE_SEND_PAYLOAD` after it builds the payload and before it calls the Veeqo API. The event is a `fostercommerce\shipments\veeqo\events\ProductPayloadEvent`:
 
 | Property  | Type                    | Notes                                             |
 |-----------|-------------------------|---------------------------------------------------|
@@ -23,8 +23,8 @@ declare(strict_types=1);
 namespace modules\veeqo;
 
 use craft\base\Module;
-use fostercommerce\shipmentsveeqo\events\ProductPayloadEvent;
-use fostercommerce\shipmentsveeqo\services\ProductSync;
+use fostercommerce\shipments\veeqo\events\ProductPayloadEvent;
+use fostercommerce\shipments\veeqo\services\ProductSync;
 use yii\base\Event;
 
 class VeeqoModule extends Module

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\models;
+namespace fostercommerce\shipments\veeqo\models;
 
 use craft\base\Model;
 

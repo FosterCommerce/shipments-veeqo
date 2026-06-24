@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\providers;
+namespace fostercommerce\shipments\veeqo\providers;
 
 use Craft;
 use craft\commerce\elements\Order;
@@ -10,8 +10,8 @@ use craft\web\View;
 use fostercommerce\shipments\base\Provider;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\services\VeeqoApi;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\services\VeeqoApi;
 
 /**
  * Veeqo fulfillment provider for the Shipments plugin.
@@ -39,6 +39,15 @@ class VeeqoProvider extends Provider
 	public static function displayName(): string
 	{
 		return 'Veeqo';
+	}
+
+	/**
+	 * @throws IntegrationException
+	 */
+	#[\Override]
+	public function supportsPush(): bool
+	{
+		return true;
 	}
 
 	/**

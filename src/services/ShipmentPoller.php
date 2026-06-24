@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\commerce\elements\Order;
@@ -16,11 +16,11 @@ use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\models\ShipmentUpdatePayload;
 use fostercommerce\shipments\Plugin as ShipmentsPlugin;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\helpers\VeeqoReference;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
-use fostercommerce\shipmentsveeqo\records\SellableMapping;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\records\SellableMapping;
 use Throwable;
 use yii\base\Component;
 

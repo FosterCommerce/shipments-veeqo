@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\migrations;
+namespace fostercommerce\shipments\veeqo\migrations;
 
 use craft\db\Migration;
-use fostercommerce\shipmentsveeqo\db\Table;
+use fostercommerce\shipments\veeqo\db\Table;
 
 class Install extends Migration
 {

@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\console\controllers;
+namespace fostercommerce\shipments\veeqo\console\controllers;
 
 use craft\console\Controller;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
 use Throwable;
 use yii\console\ExitCode;
 

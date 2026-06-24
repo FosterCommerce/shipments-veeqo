@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\db;
+namespace fostercommerce\shipments\veeqo\db;
 
 /**
  * Table name constants for the Shipments Veeqo plugin.

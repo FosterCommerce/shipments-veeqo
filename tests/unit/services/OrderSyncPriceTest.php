@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\tests\unit\services;
+namespace fostercommerce\shipments\veeqo\tests\unit\services;
 
 use fostercommerce\shipments\errors\PermanentIntegrationException;
-use fostercommerce\shipmentsveeqo\services\OrderSync;
+use fostercommerce\shipments\veeqo\services\OrderSync;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 

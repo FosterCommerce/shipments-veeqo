@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\commerce\base\Purchasable;
@@ -10,9 +10,9 @@ use craft\commerce\elements\Variant;
 use craft\commerce\Plugin as Commerce;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
 use yii\base\Component;
 
 /**

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\errors;
+namespace fostercommerce\shipments\veeqo\errors;
 
 use Throwable;
 use yii\base\Exception;

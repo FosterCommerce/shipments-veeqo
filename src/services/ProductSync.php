@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\commerce\elements\Product;
@@ -11,12 +11,12 @@ use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
 use craft\helpers\MoneyHelper;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\events\ProductPayloadEvent;
-use fostercommerce\shipmentsveeqo\helpers\ProductImageFields;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
-use fostercommerce\shipmentsveeqo\records\SellableMapping;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\events\ProductPayloadEvent;
+use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\records\SellableMapping;
 use yii\base\Component;
 
 /**

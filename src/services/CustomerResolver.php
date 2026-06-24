@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\services;
+namespace fostercommerce\shipments\veeqo\services;
 
 use craft\commerce\elements\Order;
 use craft\elements\Address;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\helpers\AddressFields;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\helpers\AddressFields;
 use yii\base\Component;
 
 /**

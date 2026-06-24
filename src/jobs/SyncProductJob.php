@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\jobs;
+namespace fostercommerce\shipments\veeqo\jobs;
 
 use Craft;
 use craft\commerce\elements\Product;
 use craft\queue\BaseJob;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\Plugin;
-use fostercommerce\shipmentsveeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
 
 class SyncProductJob extends BaseJob
 {

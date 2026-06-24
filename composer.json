@@ -28,7 +28,7 @@
 	],
 	"autoload": {
 		"psr-4": {
-			"fostercommerce\\shipmentsveeqo\\": "src/"
+			"fostercommerce\\shipments\\veeqo\\": "src/"
 		}
 	},
 	"require": {
@@ -66,10 +66,5 @@
 		"rector:fix": "rector process --config rector.php",
 		"rector:dry-run": "rector process --dry-run --config rector.php",
 		"test": "phpunit --testsuite=unit"
-	},
-	"repositories": [{
-		"name": "shipments",
-		"type": "path",
-		"url": "/Users/sjcallender/Biz-FosterCommerce/_plugins/shipments"
-	}]
+	}
 }

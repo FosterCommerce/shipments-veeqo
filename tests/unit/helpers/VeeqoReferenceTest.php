@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\tests\unit\helpers;
+namespace fostercommerce\shipments\veeqo\tests\unit\helpers;
 
-use fostercommerce\shipmentsveeqo\helpers\VeeqoReference;
+use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use PHPUnit\Framework\TestCase;
 
 final class VeeqoReferenceTest extends TestCase

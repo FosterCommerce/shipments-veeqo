@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\jobs;
+namespace fostercommerce\shipments\veeqo\jobs;
 
 use Craft;
 use craft\queue\BaseJob;
-use fostercommerce\shipmentsveeqo\errors\VeeqoApiException;
-use fostercommerce\shipmentsveeqo\Plugin;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\Plugin;
 use Throwable;
 
 /**

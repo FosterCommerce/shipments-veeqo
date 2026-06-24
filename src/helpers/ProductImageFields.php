@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\helpers;
+namespace fostercommerce\shipments\veeqo\helpers;
 
 use Craft;
 use craft\base\FieldInterface;
@@ -12,7 +12,7 @@ use craft\elements\Asset;
 use craft\elements\db\AssetQuery;
 use craft\fields\Assets;
 use craft\models\FieldLayout;
-use fostercommerce\shipmentsveeqo\Plugin;
+use fostercommerce\shipments\veeqo\Plugin;
 
 class ProductImageFields
 {

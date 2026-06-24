@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\helpers;
+namespace fostercommerce\shipments\veeqo\helpers;
 
 /**
  * Veeqo identity helpers. A Craft shipment stores one Veeqo reference (its allocation id, prefixed),

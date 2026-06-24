@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\console\controllers;
+namespace fostercommerce\shipments\veeqo\console\controllers;
 
 use Craft;
 use craft\commerce\elements\Product;
 use craft\console\Controller;
-use fostercommerce\shipmentsveeqo\jobs\SyncProductJob;
-use fostercommerce\shipmentsveeqo\Plugin;
+use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
+use fostercommerce\shipments\veeqo\Plugin;
 use yii\console\ExitCode;
 
 /**

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\events;
+namespace fostercommerce\shipments\veeqo\events;
 
 use craft\commerce\elements\Product;
 use yii\base\Event;

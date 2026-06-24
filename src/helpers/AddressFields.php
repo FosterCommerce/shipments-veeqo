@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\helpers;
+namespace fostercommerce\shipments\veeqo\helpers;
 
 use craft\base\FieldInterface;
 use craft\elements\Address;
-use fostercommerce\shipmentsveeqo\Plugin;
+use fostercommerce\shipments\veeqo\Plugin;
 
 class AddressFields
 {

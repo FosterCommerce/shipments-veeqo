@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace fostercommerce\shipmentsveeqo\records;
+namespace fostercommerce\shipments\veeqo\records;
 
 use craft\db\ActiveRecord;
-use fostercommerce\shipmentsveeqo\db\Table;
+use fostercommerce\shipments\veeqo\db\Table;
 
 /**
  * Persisted mapping between a Craft Commerce purchasable and a Veeqo sellable.
