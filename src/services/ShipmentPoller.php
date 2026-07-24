@@ -161,7 +161,7 @@ class ShipmentPoller extends Component
 			}
 		}
 
-		$this->deleteOrphanedShipments($shipmentByAllocationId, $seenAllocationIds);
+		$this->deleteOrphanedShipments($shipmentByAllocationId, $seenAllocationIds, $integrationId);
 	}
 
 	/**
@@ -233,7 +233,7 @@ class ShipmentPoller extends Component
 	 * @param array<int, Shipment> $shipmentByAllocationId
 	 * @param array<int, true> $seenAllocationIds
 	 */
-	private function deleteOrphanedShipments(array $shipmentByAllocationId, array $seenAllocationIds): void
+	private function deleteOrphanedShipments(array $shipmentByAllocationId, array $seenAllocationIds, int $integrationId): void
 	{
 		foreach ($shipmentByAllocationId as $allocationId => $shipment) {
 			if (isset($seenAllocationIds[$allocationId])) {
@@ -248,9 +248,23 @@ class ShipmentPoller extends Component
 			}
 
 			try {
+				$this->releaseAllocationReference($shipment, $integrationId);
 				Craft::$app->getElements()->deleteElement($shipment);
 			} catch (Throwable $throwable) {
 				Craft::error("Failed to delete Craft shipment {$shipment->id} for merged-away Veeqo allocation {$allocationId}: " . $throwable->getMessage(), Plugin::HANDLE);
+			}
+		}
+	}
+
+	/**
+	 * Frees the allocation id for reuse: references are unique per (integration, externalId) and a
+	 * trashed shipment keeps its row, so leaving it blocks the next shipment for that allocation.
+	 */
+	private function releaseAllocationReference(Shipment $shipment, int $integrationId): void
+	{
+		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId((int) $shipment->id) as $integrationReference) {
+			if ($integrationReference->integrationId === $integrationId && $integrationReference->id !== null) {
+				$this->shipments()->integrationReferences->deleteReferenceById($integrationReference->id);
 			}
 		}
 	}

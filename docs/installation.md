@@ -18,7 +18,12 @@ composer require fostercommerce/shipments-veeqo
 ./craft plugin/install shipments-veeqo
 ```
 
-The install migration creates one table, `shipmentsveeqo_sellable_mappings`, caching the Commerce-purchasable to Veeqo-sellable id mapping.
+The install migration creates two tables:
+
+| Table | Holds |
+|-------|-------|
+| `shipmentsveeqo_sellable_mappings` | Commerce-purchasable to Veeqo-sellable id mapping |
+| `shipmentsveeqo_order_pushes`      | One row per pushed order, so an order is never pushed to Veeqo twice |
 
 ## Veeqo account setup
 
@@ -162,5 +167,5 @@ All Veeqo communication logs to its own file, `storage/logs/shipments-veeqo-<dat
 - Stock quantities are not sent with sellable writes; Veeqo tracks stock in per-warehouse `stock_entries`.
 - Product dimensions (length, width, height) are not sent. Veeqo's API exposes `width`, `height`, and `depth` on read but does not accept them on product create or update, so dimensions must be set in Veeqo directly or via its CSV product import. Weight is sent, converted to grams from the store's configured weight unit.
 - Weight only applies when a product is first created in Veeqo. Veeqo's update endpoint ignores `weight_grams`, so re-syncing an already-synced product refreshes its title, price, and images but not its weight. To correct the weight of an existing product, set it in Veeqo directly.
-- Veeqo has no idempotency keys. A stored integration reference prevents re-pushing a shipment, but a 504 that partially persists can still leave a duplicate order.
+- Veeqo accepts duplicate order numbers, so the plugin records a claim in `shipmentsveeqo_order_pushes` before pushing. A push that dies after the claim leaves the order unpushable until you delete its row.
 - Variants without a SKU are skipped by product sync.

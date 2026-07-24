@@ -28,6 +28,7 @@ use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
 use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
 use fostercommerce\shipments\veeqo\models\Settings;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\records\OrderPush;
 use fostercommerce\shipments\veeqo\services\CustomerResolver;
 use fostercommerce\shipments\veeqo\services\OrderSync;
 use fostercommerce\shipments\veeqo\services\ProductSync;
@@ -54,7 +55,7 @@ class Plugin extends \craft\base\Plugin
 
 	public bool $hasCpSettings = true;
 
-	public string $schemaVersion = '1.0.0';
+	public string $schemaVersion = '1.1.0';
 
 	public function init(): void
 	{
@@ -220,6 +221,15 @@ class Plugin extends \craft\base\Plugin
 		$shipmentsPlugin = ShipmentsPlugin::getInstance();
 		$integration = $shipmentsPlugin->integrations->getIntegrationByHandle((string) $provider->handle);
 		if (! $integration instanceof Integration || $integration->id === null) {
+			return;
+		}
+
+		// A shipment the poll mirrors back reaches this status with no source integration, so the
+		// claim is what tells the two apart.
+		if (OrderPush::find()->where([
+			'orderId' => $event->shipment->orderId,
+			'integrationId' => $integration->id,
+		])->exists()) {
 			return;
 		}
 

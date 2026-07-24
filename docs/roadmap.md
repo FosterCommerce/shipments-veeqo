@@ -16,7 +16,8 @@ The reference table holds one external id per (shipment, integration), so a ship
 
 - Each Craft shipment stores `alloc:{allocationId}` (its Veeqo allocation). See `helpers/VeeqoReference`.
 - The Veeqo order links to the Craft order through the Veeqo order `number` (`orderIdPrefix . order.reference`), not a stored reference. The poll parses the number back to the Craft order reference (`Order::find()->reference()`).
-- Push dedup and cancellation both resolve the Veeqo order by `GET /orders?query={number}` (`VeeqoApi::getOrderIdByNumber`), since there is no stored order reference.
+- Push dedup reads `shipmentsveeqo_order_pushes`. The row is written before the create; its unique `(orderId, integrationId)` index rejects the second push.
+- Cancellation resolves the Veeqo order by `GET /orders?query={number}` (`VeeqoApi::getOrderIdByNumber`).
 
 No migration: the plugin is unreleased and only a test Veeqo account is in play.
 
@@ -66,7 +67,7 @@ This also means pre-ship mirroring: Craft reflects Veeqo's allocation split as s
 1. Orphaned shipment on allocation removal: delete it, but only when still `New`. A Shipped orphan is kept (real fulfilment record).
 2. Custom line items: reverse map by SKU (synthetic `custom-{lineItemId}` recovers the id).
 3. Human-edited shipment conflict: Veeqo wins; reconcile overwrites.
-4. References: `alloc:` per shipment; order linked by number; dedup and cancellation by number lookup. No migration.
+4. References: `alloc:` per shipment; order linked by number; cancellation by number lookup. Push dedup is a local claim row written before the create: Veeqo's number lookup lags a create by seconds and `number` is not unique.
 5. Poll: no status filter (all recent orders plus a cancelled pass), since a shipped allocation can hide under any rollup status.
 6. `enforceCoverage` is turned off for the store, because the Veeqo mirror legitimately produces partially covered orders (backorders). Alternative not taken: make the parent plugin skip coverage for integration-sourced updates.
 
@@ -74,7 +75,7 @@ This also means pre-ship mirroring: Craft reflects Veeqo's allocation split as s
 
 Order with two allocations (one shipped, one backordered then removed) exercised the whole path:
 
-- Push, number-anchored dedup (`already exists; skipping push`).
+- Push, number-anchored dedup (`already exists; skipping push`). Superseded by the claim row.
 - Poll picks the order up under `awaiting_stock` and `awaiting_fulfillment`.
 - Reverse map via nested `sellable.sku_code`.
 - Adopt + resize the original shipment; create a second shipment for the second allocation.

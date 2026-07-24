@@ -41,13 +41,23 @@ class VeeqoProvider extends Provider
 		return 'Veeqo';
 	}
 
-	/**
-	 * @throws IntegrationException
-	 */
 	#[\Override]
 	public function supportsPush(): bool
 	{
 		return true;
+	}
+
+	// The plugin queues its own push when a shipment reaches the configured auto-push status.
+	#[\Override]
+	public function autoPushNewShipments(): bool
+	{
+		return false;
+	}
+
+	#[\Override]
+	public function autoPushUpdatedShipments(): bool
+	{
+		return false;
 	}
 
 	/**

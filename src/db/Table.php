@@ -10,4 +10,6 @@ namespace fostercommerce\shipments\veeqo\db;
 final class Table
 {
 	public const SELLABLE_MAPPINGS = '{{%shipmentsveeqo_sellable_mappings}}';
+
+	public const ORDER_PUSHES = '{{%shipmentsveeqo_order_pushes}}';
 }

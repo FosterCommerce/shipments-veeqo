@@ -15,22 +15,25 @@ use craft\helpers\MoneyHelper;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
+use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\AddressFields;
 use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use fostercommerce\shipments\veeqo\jobs\NotifyCancellationJob;
 use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\records\OrderPush;
 use fostercommerce\shipments\veeqo\records\SellableMapping;
 use Throwable;
 use yii\base\Component;
+use yii\db\IntegrityException;
 
 /**
  * Pushes a Commerce order to Veeqo as one Veeqo order. Veeqo auto-allocates it; the poll mirrors
  * each Veeqo allocation back as a Craft shipment.
  *
- * Veeqo has no idempotency keys, so the deterministic order number (prefix + order reference) is the
- * idempotency key: a per-order mutex plus a number lookup short-circuit a duplicate push.
+ * Veeqo has no idempotency keys and accepts duplicate order numbers, so a locally recorded claim
+ * (the OrderPush record) is what stops a duplicate push.
  */
 class OrderSync extends Component
 {
@@ -92,21 +95,28 @@ class OrderSync extends Component
 			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
 		}
 
+		$integration = $provider->getSourceIntegration();
+		if (! $integration instanceof Integration || $integration->id === null) {
+			throw new PermanentIntegrationException('Veeqo provider is not bound to a saved integration.');
+		}
+
+		$orderId = (int) $order->id;
+		$integrationId = $integration->id;
 		$client = $provider->getClient();
 		$number = VeeqoReference::orderNumber($provider->orderIdPrefix, (string) $order->reference);
 
 		try {
-			if ($client->getOrderIdByNumber($number) !== null) {
-				Craft::info("Veeqo order {$number} already exists; skipping push.", Plugin::HANDLE);
-				return;
-			}
-
 			$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
 			if ($lineItemAttributes === []) {
 				throw new PermanentIntegrationException("Order {$order->id} has no line items to push to Veeqo.");
 			}
 
 			$customerId = $this->plugin()->customerResolver->resolveCustomerId($order, $client);
+
+			if (! $this->claimPush($orderId, $integrationId, $number)) {
+				Craft::info("Veeqo order {$number} already pushed; skipping push.", Plugin::HANDLE);
+				return;
+			}
 
 			$response = $client->post('/orders', [
 				'order' => [
@@ -130,6 +140,30 @@ class OrderSync extends Component
 		$veeqoOrderId = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : 0;
 		if ($veeqoOrderId === 0) {
 			throw new PermanentIntegrationException("Veeqo order create for order {$order->id} returned no id.");
+		}
+
+		OrderPush::updateAll([
+			'veeqoOrderId' => $veeqoOrderId,
+		], [
+			'orderId' => $orderId,
+			'integrationId' => $integrationId,
+		]);
+	}
+
+	/**
+	 * Records the intent to push, returning false when a push already holds this order.
+	 */
+	private function claimPush(int $orderId, int $integrationId, string $number): bool
+	{
+		$orderPush = new OrderPush();
+		$orderPush->orderId = $orderId;
+		$orderPush->integrationId = $integrationId;
+		$orderPush->veeqoOrderNumber = $number;
+
+		try {
+			return $orderPush->save();
+		} catch (IntegrityException) {
+			return false;
 		}
 	}
 
