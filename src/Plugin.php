@@ -143,7 +143,7 @@ class Plugin extends \craft\base\Plugin
 				continue;
 			}
 
-			if (! $allIntegration->enabled) {
+			if (! $allIntegration->isEnabled()) {
 				continue;
 			}
 
