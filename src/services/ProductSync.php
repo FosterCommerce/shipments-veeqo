@@ -9,6 +9,7 @@ use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
+use craft\helpers\StringHelper;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\events\ProductPayloadEvent;
@@ -31,6 +32,11 @@ class ProductSync extends Component
 	 * the Craft line item id is recoverable when an allocation is mirrored back.
 	 */
 	public const CUSTOM_SKU_PREFIX = 'custom-';
+
+	/**
+	 * Shortest query Veeqo's product search accepts; anything shorter comes back as a 400.
+	 */
+	public const MIN_SEARCH_LENGTH = 3;
 
 	/**
 	 * Creates or updates the given Commerce product in Veeqo, then records the returned
@@ -70,9 +76,9 @@ class ProductSync extends Component
 	}
 
 	/**
-	 * Link a product's variants to sellables already in Veeqo by exact SKU match, recording the
-	 * mapping without creating anything in Veeqo. A lookup that errors (timeout, rate limit) is
-	 * collected as failed rather than aborting the run, so a bulk reconcile finishes.
+	 * Link a product's variants to sellables already in Veeqo by exact SKU match, creating nothing.
+	 *
+	 * Only a retryable failure lands in `failed`; a bulk run finishes either way.
 	 *
 	 * @return array{linked: list<string>, unmatched: list<string>, failed: list<string>}
 	 */
@@ -97,11 +103,26 @@ class ProductSync extends Component
 				continue;
 			}
 
+			// Veeqo's product search rejects a query under 3 characters, so a short SKU is unfindable
+			// and will be created rather than linked.
+			if (StringHelper::length($sku) < self::MIN_SEARCH_LENGTH) {
+				$unmatched[] = $sku;
+				continue;
+			}
+
 			try {
 				$match = $this->findSellableBySku($sku, $provider);
 			} catch (VeeqoApiException $veeqoApiException) {
 				Craft::warning("Veeqo reconcile lookup failed for SKU {$sku}: " . $veeqoApiException->getMessage(), Plugin::HANDLE);
-				$failed[] = $sku;
+
+				// A 4xx answers the same way every run, so reporting it as retryable sends the operator
+				// back to a command that can never clear it.
+				if ($veeqoApiException->isRetryable()) {
+					$failed[] = $sku;
+				} else {
+					$unmatched[] = $sku;
+				}
+
 				continue;
 			}
 

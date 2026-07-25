@@ -121,7 +121,7 @@ When Veeqo already holds products, link them to Craft by SKU before syncing so t
    ```sh
    ./craft shipments-veeqo/products/reconcile
    ```
-   It links every variant it can match and prints the SKUs it could not. Nothing is created in Veeqo.
+   It links every variant it can match and prints the SKUs it could not. Nothing is created in Veeqo. SKUs shorter than 3 characters are always listed as unmatched, since Veeqo's search cannot look them up.
 3. Fix any unmatched SKUs in Craft or Veeqo and run reconcile again.
 4. Run `./craft shipments-veeqo/products/sync` to create the products that do not exist in Veeqo yet.
 
@@ -191,3 +191,4 @@ Push failures are also stored on the shipment itself (the last attempt error on 
 - Weight only applies when a product is first created in Veeqo. Veeqo's update endpoint ignores `weight_grams`, so re-syncing an already-synced product refreshes its title, price, and images but not its weight. To correct the weight of an existing product, set it in Veeqo directly.
 - Veeqo accepts duplicate order numbers, so the plugin records a claim in `shipmentsveeqo_order_pushes` before pushing. If Veeqo answers with an error the claim is dropped, so a retry or a manual re-push goes through. If the request times out with no answer at all, the claim stands (Veeqo may have created the order), and that order will not push again until you delete its row.
 - Variants without a SKU are skipped by product sync.
+- Veeqo's product search needs at least 3 characters, so a variant whose SKU is 1 or 2 characters cannot be linked to an existing Veeqo product. Reconcile lists it as unmatched and the next sync creates it fresh, which duplicates it if Veeqo already holds that SKU.

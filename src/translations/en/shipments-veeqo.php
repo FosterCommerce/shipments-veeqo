@@ -19,6 +19,10 @@ return [
 	'settings.autoPushStatusLabel' => 'Auto-push to Veeqo at status',
 	'settings.autoPushStatusInstructions' => 'When a shipment reaches this status, push it to Veeqo automatically. Leave empty to push only with the manual button.',
 
+	// Plugin footer
+	'footer.supportBy' => 'Support by',
+	'footer.supportTitle' => 'Foster Commerce Support',
+
 	// Queue jobs
 	'queue.notifyCancellation' => 'Notifying Veeqo of a cancellation',
 	'job.syncProduct' => 'Syncing product {id} to Veeqo',
