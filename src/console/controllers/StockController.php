@@ -35,7 +35,7 @@ class StockController extends Controller
 		}
 
 		try {
-			$plugin->stockSync->pull($provider);
+			$plugin->getStockSync()->pull($provider);
 		} catch (Throwable $throwable) {
 			$this->stderr(sprintf("Veeqo stock pull failed: %s\n", $throwable->getMessage()));
 			return ExitCode::UNSPECIFIED_ERROR;

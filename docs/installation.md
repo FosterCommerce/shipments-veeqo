@@ -5,7 +5,7 @@ A Veeqo provider for the Foster Commerce Shipments plugin, plus product sync bet
 ## Requirements
 
 - Craft CMS `^5.0`
-- Craft Commerce `^5.0`
+- Craft Commerce `^5.3`
 - Foster Commerce Shipments `dev-main` (installed and enabled first)
 - PHP `^8.2`
 - A running Craft queue worker (product syncs and shipment pushes run as queued jobs)
@@ -123,25 +123,36 @@ When Veeqo already holds products, link them to Craft by SKU before syncing so t
    ```
    It links every variant it can match and prints the SKUs it could not. Nothing is created in Veeqo.
 3. Fix any unmatched SKUs in Craft or Veeqo and run reconcile again.
-4. Run `./craft shipments-veeqo/products/sync` to create the products that genuinely do not exist in Veeqo yet.
+4. Run `./craft shipments-veeqo/products/sync` to create the products that do not exist in Veeqo yet.
 
-`products/sync` also reconciles on its own (it looks a product up by SKU before creating), so this command is the safe, no-create way to preview and confirm the links first. Both paths stay under Veeqo's rate limit: the client paces requests just below 5 per second and retries on a 429.
+`products/sync` also reconciles on its own (it looks a product up by SKU before creating). Reconcile creates nothing, so it lets you preview and confirm the links first. Both paths stay under Veeqo's rate limit: the client paces requests just below 5 per second and retries on a 429.
 
 ## Receiving shipped status from Veeqo
 
-Veeqo has no webhooks and the plugin exposes no endpoint for Veeqo to call. Inbound updates are pull only: `shipments-veeqo/sync/pull` asks Veeqo for shipped orders and writes their tracking and status back onto the matching Craft shipment. The match is by the Veeqo order id recorded as the shipment's integration reference when it was pushed.
+Veeqo has no webhooks and the plugin exposes no endpoint for Veeqo to call. Inbound updates are pull only, through `shipments-veeqo/sync/pull`.
+
+Craft pushes a whole order to Veeqo as one Veeqo order. Veeqo then splits it into one or more **allocations**, one per parcel it intends to ship, and each allocation carries its own line items and tracking. The poll mirrors that split: every allocation becomes one Craft shipment.
+
+Each run walks the Veeqo orders created inside the **Poll lookback (hours)** window, matches each one to a Craft order by its number (the **Order reference prefix** plus the Craft order reference), and reconciles that order's shipments against its allocations:
+
+- An allocation with no matching Craft shipment creates one.
+- An allocation whose shipment already exists has its line items resized to match.
+- A shipment whose allocation no longer exists is trashed, but only while it is still **New**. A shipment that already shipped is kept and logged.
+- Each shipment then takes its own allocation's tracking. An allocation with no tracking number is left open.
+
+Veeqo is the source of truth after the push. If you edit a mirrored shipment's line items in Craft, the next poll overwrites them.
 
 To test that a Veeqo shipment is captured in Craft:
 
-1. Push a shipment to Veeqo so its Veeqo order id is recorded (the **Push to Veeqo** button on the shipment).
-2. In Veeqo, ship that order and enter a **carrier and tracking number**. Without a tracking number the poll skips the order.
+1. Push an order to Veeqo (the **Push to Veeqo** button on a shipment).
+2. In Veeqo, ship that order and enter a **carrier and tracking number**.
 3. Run the poll:
    ```sh
    ./craft shipments-veeqo/sync/pull
    ```
-4. Open the shipment in Craft and confirm its status is **Shipped**, the tracking number, URL, and carrier are filled in, and the **Status history** tab shows the transition with the integration as the source.
+4. Open the order's Shipments tab in Craft and confirm there is one shipment per Veeqo allocation, each **Shipped** with its own tracking number, URL, and carrier, and that the **Status history** tab shows the transition with the integration as the source.
 
-If nothing changes, check the three usual causes: the Veeqo shipment has no tracking number, the Veeqo order falls outside the integration's **Poll lookback (hours)** window, or the shipment was never pushed so it has no Veeqo order id to match on.
+If nothing changes, check the usual causes: the Veeqo allocation has no tracking number, the Veeqo order was created outside the **Poll lookback (hours)** window, or its number does not resolve to a Craft order reference (a wrong or missing **Order reference prefix**, or an order raised directly in Veeqo).
 
 ## Cancellations
 
@@ -151,14 +162,25 @@ If nothing changes, check the three usual causes: the Veeqo shipment has no trac
 
 - a shipment is deleted in Craft,
 - an order is deleted,
-- an order moves into one of the ignored order statuses, or
-- an order is switched to not requiring shipping.
+- an order is ignored, either by an admin or by moving into one of the ignored order statuses, or
+- an order stops requiring shipping.
 
-Each note targets the Veeqo order behind the affected shipment; shipments that were never pushed are skipped.
+Each note names the reason and targets the Veeqo order matching the Craft order's number. An order that was never pushed has no Veeqo order to find, so nothing is posted.
 
 ## Logging
 
-All Veeqo communication logs to its own file, `storage/logs/shipments-veeqo-<date>.log` (category `shipments-veeqo`), across web, queue, and console runs. Every non-2xx Veeqo response, transport error, and timeout is recorded, along with poll skips: an order with no matching Craft shipment logs at info level, and an order matched to a shipment but missing a tracking number logs at warning level. Push failures are also stored on the shipment itself (the last attempt error on its Details tab) and surface as failed jobs in the queue.
+All Veeqo communication logs to its own file, `storage/logs/shipments-veeqo-<date>.log` (category `shipments-veeqo`), across web, queue, and console runs. Every non-2xx Veeqo response and transport error is recorded, as are these reconcile outcomes:
+
+| Logged | Level |
+|---|---|
+| An allocation whose line items match nothing on the Craft order, so no shipment is written for it | Warning |
+| An allocation that could not be mirrored (the shipment save failed) | Error |
+| A shipment whose allocation is gone but which has already progressed past **New**, so it is kept | Warning |
+| A push skipped because the order was already pushed | Info |
+
+A Veeqo order whose number does not resolve to a Craft order is skipped silently, since every store has orders that did not come from Craft.
+
+Push failures are also stored on the shipment itself (the last attempt error on its Details tab) and surface as failed jobs in the queue.
 
 ## Known limitations
 
@@ -167,5 +189,5 @@ All Veeqo communication logs to its own file, `storage/logs/shipments-veeqo-<dat
 - Stock quantities are not sent with sellable writes; Veeqo tracks stock in per-warehouse `stock_entries`.
 - Product dimensions (length, width, height) are not sent. Veeqo's API exposes `width`, `height`, and `depth` on read but does not accept them on product create or update, so dimensions must be set in Veeqo directly or via its CSV product import. Weight is sent, converted to grams from the store's configured weight unit.
 - Weight only applies when a product is first created in Veeqo. Veeqo's update endpoint ignores `weight_grams`, so re-syncing an already-synced product refreshes its title, price, and images but not its weight. To correct the weight of an existing product, set it in Veeqo directly.
-- Veeqo accepts duplicate order numbers, so the plugin records a claim in `shipmentsveeqo_order_pushes` before pushing. A push that dies after the claim leaves the order unpushable until you delete its row.
+- Veeqo accepts duplicate order numbers, so the plugin records a claim in `shipmentsveeqo_order_pushes` before pushing. If Veeqo answers with an error the claim is dropped, so a retry or a manual re-push goes through. If the request times out with no answer at all, the claim stands (Veeqo may have created the order), and that order will not push again until you delete its row.
 - Variants without a SKU are skipped by product sync.

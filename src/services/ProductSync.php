@@ -9,19 +9,18 @@ use craft\commerce\elements\Product;
 use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
-use craft\helpers\MoneyHelper;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\events\ProductPayloadEvent;
 use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
+use fostercommerce\shipments\veeqo\helpers\VeeqoPrice;
 use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
 use fostercommerce\shipments\veeqo\records\SellableMapping;
 use yii\base\Component;
 
 /**
- * Pushes Craft Commerce products (and their variants) up to Veeqo as products + sellables,
- * using the credentials on the active Veeqo provider.
+ * Veeqo product sync service.
  */
 class ProductSync extends Component
 {
@@ -79,7 +78,7 @@ class ProductSync extends Component
 	 */
 	public function reconcile(Product $product, VeeqoProvider $provider): array
 	{
-		$sellableMappings = $this->plugin()->sellableMappings;
+		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		$linked = [];
 		$unmatched = [];
@@ -94,7 +93,7 @@ class ProductSync extends Component
 				continue;
 			}
 
-			if ($sellableMappings->findByPurchasableId($variant->id) !== null) {
+			if ($sellableMappings->findByPurchasableId($variant->id) instanceof SellableMapping) {
 				continue;
 			}
 
@@ -145,7 +144,7 @@ class ProductSync extends Component
 				[
 					'sku_code' => $sku,
 					'title' => $lineItem->getDescription(),
-					'price' => $this->priceString((float) $lineItem->salePrice, $currencyCode),
+					'price' => VeeqoPrice::decimal((float) $lineItem->salePrice, $currencyCode),
 				],
 			],
 		]);
@@ -204,16 +203,9 @@ class ProductSync extends Component
 		return null;
 	}
 
-	private function plugin(): Plugin
-	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		return $plugin;
-	}
-
 	private function findExistingMapping(Product $product): ?SellableMapping
 	{
-		$sellableMappings = $this->plugin()->sellableMappings;
+		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		foreach ($product->getVariants() as $variant) {
 			if ($variant->id === null) {
@@ -221,7 +213,7 @@ class ProductSync extends Component
 			}
 
 			$sellableMapping = $sellableMappings->findByPurchasableId($variant->id);
-			if ($sellableMapping !== null) {
+			if ($sellableMapping instanceof SellableMapping) {
 				return $sellableMapping;
 			}
 
@@ -231,7 +223,7 @@ class ProductSync extends Component
 			}
 
 			$sellableMapping = $sellableMappings->findBySku($sku);
-			if ($sellableMapping !== null) {
+			if ($sellableMapping instanceof SellableMapping) {
 				return $sellableMapping;
 			}
 		}
@@ -258,7 +250,7 @@ class ProductSync extends Component
 			'sellables_attributes' => $sellablePayloads,
 		];
 
-		$imageUrl = ProductImageFields::firstUrl($product);
+		$imageUrl = ProductImageFields::firstUrl($product, (string) Plugin::instance()->getSettings()->productImagesHandle);
 		if ($imageUrl !== null) {
 			$payload['images_attributes'] = [
 				[
@@ -272,8 +264,7 @@ class ProductSync extends Component
 	}
 
 	/**
-	 * Builds the per-variant sellable attributes. Stock is intentionally NOT sent here:
-	 * Veeqo tracks stock in per-warehouse `stock_entries`, not as a field on sellables.
+	 * Stock is not sent: Veeqo tracks it in per-warehouse `stock_entries`, not on the sellable.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -284,7 +275,7 @@ class ProductSync extends Component
 		$attributes = [
 			'sku_code' => (string) $variant->sku,
 			'title' => (string) $variant->title,
-			'price' => $this->priceString((float) $variant->price, $currencyCode),
+			'price' => VeeqoPrice::decimal((float) $variant->price, $currencyCode),
 		];
 
 		$weightGrams = $this->toGrams((float) $variant->weight);
@@ -293,31 +284,6 @@ class ProductSync extends Component
 		}
 
 		return $attributes;
-	}
-
-	/**
-	 * Format a price as the decimal string Veeqo expects, routing through Money so float dollar
-	 * values do not drift before they leave Craft.
-	 *
-	 * @throws PermanentIntegrationException
-	 */
-	private function priceString(float $amount, string $currencyCode): string
-	{
-		if ($currencyCode === '') {
-			throw new PermanentIntegrationException('Cannot format a Veeqo price without a store currency.');
-		}
-
-		$money = MoneyHelper::toMoney([
-			'value' => (string) $amount,
-			'currency' => $currencyCode,
-		]);
-		$decimal = $money === false ? false : MoneyHelper::toDecimal($money);
-
-		if ($decimal === false) {
-			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");
-		}
-
-		return $decimal;
 	}
 
 	/**
@@ -353,7 +319,7 @@ class ProductSync extends Component
 			return;
 		}
 
-		$sellableMappings = $this->plugin()->sellableMappings;
+		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		foreach ($product->getVariants() as $variant) {
 			$sku = (string) $variant->sku;

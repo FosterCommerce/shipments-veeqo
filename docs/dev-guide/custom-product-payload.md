@@ -8,10 +8,10 @@ How to change the product and sellable data sent to Veeqo before it leaves Craft
 
 | Property  | Type                    | Notes                                             |
 |-----------|-------------------------|---------------------------------------------------|
-| `product` | `craft\commerce\elements\Product` | The Commerce product being synced. Read-only. |
+| `product` | `craft\commerce\elements\Product` | The Commerce product being synced. Read it; do not reassign it. |
 | `payload` | `array<string, mixed>`  | The outgoing payload. Reassign it to change what is sent. |
 
-The payload holds `title` and `sellables_attributes` (one entry per SKU-bearing variant). Whatever `payload` contains when the listener returns is what gets POSTed or PUT to Veeqo.
+The payload holds `title` and `sellables_attributes` (one entry per SKU-bearing variant), plus `images_attributes` when the **Product images field** setting is set and the product has an image. Whatever `payload` contains when the listener returns is what gets POSTed or PUT to Veeqo.
 
 ## Minimal example
 

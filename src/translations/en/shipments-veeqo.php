@@ -21,6 +21,19 @@ return [
 
 	// Queue jobs
 	'queue.notifyCancellation' => 'Notifying Veeqo of a cancellation',
+	'job.syncProduct' => 'Syncing product {id} to Veeqo',
+
+	// Push failures, shown on the shipment's Details tab in the control panel
+	'error.push.inProgress' => 'Another push for this order is already running. Try again in a moment.',
+	'error.push.noChannelId' => 'No Veeqo channel ID is set on the integration. Add one under Shipments → Settings → Integrations.',
+	'error.push.noIntegration' => 'The Veeqo integration hasn’t been saved yet. Save it under Shipments → Settings → Integrations, then push again.',
+	'error.push.noLineItems' => 'This order has no line items to send to Veeqo.',
+	'error.push.noOrderId' => 'Veeqo accepted the order but didn’t return an ID for it.',
+	'error.push.notAVariant' => '“{description}” isn’t a Commerce product variant, so it can’t be sent to Veeqo.',
+	'error.push.variantNotSynced' => '“{description}” couldn’t be synced to Veeqo. Check that its variant has a SKU.',
+	'error.push.customItemFailed' => 'Veeqo wouldn’t create a product for the custom line item “{description}”.',
+	'error.push.noEmail' => 'This order has no email address, and Veeqo requires one on every order.',
+	'error.push.noCustomerId' => 'Veeqo accepted the customer for {email} but didn’t return an ID.',
 
 	// Provider settings (integration edit page)
 	'provider.apiKeyLabel' => 'API key',
@@ -33,7 +46,4 @@ return [
 	'provider.notifyCustomerInstructions' => 'Whether Veeqo emails the customer when the order ships.',
 	'provider.pollLookbackLabel' => 'Poll lookback (hours)',
 	'provider.pollLookbackInstructions' => 'How far back each poll queries Veeqo for shipped orders.',
-
-	// Queue jobs
-	'job.syncProduct' => 'Syncing product {id} to Veeqo',
 ];

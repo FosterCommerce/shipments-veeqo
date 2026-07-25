@@ -53,7 +53,7 @@ class ProductsController extends Controller
 		$unmatched = [];
 		$failed = [];
 		foreach (Product::find()->all() as $product) {
-			$report = $plugin->productSync->reconcile($product, $provider);
+			$report = $plugin->getProductSync()->reconcile($product, $provider);
 			$linkedCount += count($report['linked']);
 			$unmatched = [...$unmatched, ...$report['unmatched']];
 			$failed = [...$failed, ...$report['failed']];

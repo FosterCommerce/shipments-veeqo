@@ -19,7 +19,7 @@ The reference table holds one external id per (shipment, integration), so a ship
 - Push dedup reads `shipmentsveeqo_order_pushes`. The row is written before the create; its unique `(orderId, integrationId)` index rejects the second push.
 - Cancellation resolves the Veeqo order by `GET /orders?query={number}` (`VeeqoApi::getOrderIdByNumber`).
 
-No migration: the plugin is unreleased and only a test Veeqo account is in play.
+The claim table ships in `Install.php` and in `m260724_210000_add_order_pushes`; its integration foreign key was added in `m260725_084338_add_order_push_integration_fk`.
 
 ## Reverse line item map
 

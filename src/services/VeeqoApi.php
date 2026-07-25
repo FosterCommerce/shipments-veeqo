@@ -16,7 +16,7 @@ use Psr\Http\Message\ResponseInterface;
 use yii\base\Component;
 
 /**
- * HTTP client for the Veeqo REST API. Built per integration with that integration's API key.
+ * HTTP client for the Veeqo REST API, built per integration with that integration's API key.
  *
  * @see https://developers.veeqo.com
  */
@@ -183,17 +183,11 @@ class VeeqoApi extends Component
 
 			$body = (string) $response->getBody();
 
-			// Veeqo sends no Retry-After on 429; capture it anyway in case that changes.
-			$retryAfter = $response->getHeaderLine('Retry-After');
-			if ($retryAfter === '') {
-				$retryAfter = $response->getHeaderLine('X-Retry-After');
-			}
-
 			Craft::warning('Veeqo API ' . $method . ' ' . $path . ' returned ' . $status . ': ' . $body, Plugin::HANDLE);
-			throw new VeeqoApiException($status, $body, $retryAfter, $badResponseException);
+			throw new VeeqoApiException($status, $body, $badResponseException);
 		} catch (GuzzleException $guzzleException) {
 			Craft::error('Veeqo API ' . $method . ' ' . $path . ' transport error: ' . $guzzleException->getMessage(), Plugin::HANDLE);
-			throw new VeeqoApiException(0, $guzzleException->getMessage(), '', $guzzleException);
+			throw new VeeqoApiException(0, $guzzleException->getMessage(), $guzzleException);
 		}
 	}
 

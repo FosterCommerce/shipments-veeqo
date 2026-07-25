@@ -14,10 +14,7 @@ use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\services\VeeqoApi;
 
 /**
- * Veeqo fulfillment provider for the Shipments plugin.
- *
- * Pushes shipments to Veeqo as orders, polls Veeqo for tracking, and validates the API key.
- * Credentials live on this provider (per integration); product sync reads them via the active provider.
+ * Veeqo fulfillment provider.
  */
 class VeeqoProvider extends Provider
 {
@@ -65,7 +62,7 @@ class VeeqoProvider extends Provider
 	 */
 	public function sendShipment(Shipment $shipment, Order $order): void
 	{
-		$this->plugin()->orderSync->pushShipment($shipment, $order, $this);
+		Plugin::instance()->getOrderSync()->pushShipment($shipment, $order, $this);
 	}
 
 	/**
@@ -73,7 +70,7 @@ class VeeqoProvider extends Provider
 	 */
 	public function pull(): void
 	{
-		$this->plugin()->shipmentPoller->poll($this);
+		Plugin::instance()->getShipmentPoller()->poll($this);
 	}
 
 	public function getClient(): VeeqoApi
@@ -117,12 +114,5 @@ class VeeqoProvider extends Provider
 				'min' => 1],
 			[['notifyCustomer'], 'boolean'],
 		]);
-	}
-
-	private function plugin(): Plugin
-	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		return $plugin;
 	}
 }

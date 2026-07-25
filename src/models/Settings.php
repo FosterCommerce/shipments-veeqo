@@ -5,36 +5,21 @@ declare(strict_types=1);
 namespace fostercommerce\shipments\veeqo\models;
 
 use craft\base\Model;
+use fostercommerce\shipments\enums\Status;
 
 /**
- * Plugin-wide settings. Veeqo credentials and shipment-push config live on the
- * VeeqoProvider (per integration); these are the only plugin-global options.
+ * Plugin-wide settings. Credentials and push config live on the provider, per integration.
  */
 class Settings extends Model
 {
-	/**
-	 * When on, saving a Commerce product enqueues a Veeqo sellable sync.
-	 */
 	public bool $syncProducts = true;
 
-	/**
-	 * Asset field handle whose images are sent with the product payload. Null skips images.
-	 */
 	public ?string $productImagesHandle = null;
 
-	/**
-	 * When on, the Veeqo stock pull adjusts Commerce inventory for inventory-tracked variants.
-	 */
 	public bool $syncStock = true;
 
-	/**
-	 * Address field handle holding the customer phone, sent with orders and customers. Null skips phone.
-	 */
 	public ?string $phoneFieldHandle = null;
 
-	/**
-	 * Shipment status that auto-pushes to Veeqo when reached. Null disables auto-push.
-	 */
 	public ?string $autoPushStatus = null;
 
 	/**
@@ -45,6 +30,14 @@ class Settings extends Model
 		return [
 			[['syncProducts', 'syncStock'], 'boolean'],
 			[['productImagesHandle', 'phoneFieldHandle', 'autoPushStatus'], 'string'],
+			[
+				['autoPushStatus'],
+				'in',
+				'range' => array_map(
+					static fn (Status $case): string => $case->value,
+					Status::cases()
+				),
+			],
 		];
 	}
 }

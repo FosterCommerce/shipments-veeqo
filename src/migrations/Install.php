@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace fostercommerce\shipments\veeqo\migrations;
 
 use craft\db\Migration;
+use fostercommerce\shipments\db\Table as ShipmentsTable;
 use fostercommerce\shipments\veeqo\db\Table;
 
 class Install extends Migration
@@ -57,6 +58,15 @@ class Install extends Migration
 			Table::ORDER_PUSHES,
 			['orderId'],
 			'{{%commerce_orders}}',
+			['id'],
+			'CASCADE',
+		);
+
+		$this->addForeignKey(
+			null,
+			Table::ORDER_PUSHES,
+			['integrationId'],
+			ShipmentsTable::INTEGRATIONS,
 			['id'],
 			'CASCADE',
 		);

@@ -20,18 +20,13 @@ use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
-use fostercommerce\shipments\veeqo\records\SellableMapping;
 use Throwable;
 use yii\base\Component;
 
 /**
- * Polls Veeqo for shipped and cancelled orders and reconciles the Craft shipments for each order to
- * mirror that order's Veeqo allocations.
+ * Veeqo shipment poller.
  *
- * Veeqo has no webhooks, so this is the only inbound path. Each Veeqo allocation maps to one Craft
- * shipment (keyed by the allocation id). Veeqo is the source of truth after push: a reconcile pass
- * creates, resizes, or deletes Craft shipments to match the allocation set, then writes per-allocation
- * tracking. The Veeqo order is matched to a Craft order by the order number, not a stored reference.
+ * Veeqo is authoritative after push, so a pass overwrites the Craft split to match its allocations.
  */
 class ShipmentPoller extends Component
 {
@@ -82,7 +77,7 @@ class ShipmentPoller extends Component
 					'page_size' => self::PAGE_SIZE,
 				]);
 			} catch (VeeqoApiException $veeqoApiException) {
-				$this->rethrow($veeqoApiException);
+				throw $veeqoApiException->toIntegrationException();
 			}
 
 			foreach ($result['items'] as $veeqoOrder) {
@@ -96,8 +91,6 @@ class ShipmentPoller extends Component
 	}
 
 	/**
-	 * Reconciles one Craft order's shipments to its Veeqo order's allocations.
-	 *
 	 * @param array<array-key, mixed> $veeqoOrder
 	 */
 	private function reconcileOrder(array $veeqoOrder, VeeqoProvider $provider, Integration $integration): void
@@ -121,20 +114,21 @@ class ShipmentPoller extends Component
 
 		// Index the order's current shipments by their allocation id; ones with no allocation ref yet
 		// (a fresh push, before its first reconcile) are adoptable by the next allocation.
+		$shipments = $this->shipments()->shipments->findByOrderId($order->id);
+		$allocationIdByShipmentId = $this->allocationIdsForShipments($shipments, $integrationId);
+
 		$shipmentByAllocationId = [];
 		$adoptable = [];
-		foreach ($this->shipments()->shipments->findByOrderId($order->id) as $shipment) {
-			if (! $shipment instanceof Shipment) {
-				continue;
-			}
-
-			$allocationId = $this->shipmentAllocationId($shipment, $integrationId);
+		foreach ($shipments as $shipment) {
+			$allocationId = $allocationIdByShipmentId[$shipment->id] ?? null;
 			if ($allocationId !== null) {
 				$shipmentByAllocationId[$allocationId] = $shipment;
 			} else {
 				$adoptable[] = $shipment;
 			}
 		}
+
+		$lineItemIndex = $this->buildLineItemIndex($order);
 
 		$seenAllocationIds = [];
 		foreach ($allocations as $allocation) {
@@ -147,7 +141,7 @@ class ShipmentPoller extends Component
 				continue;
 			}
 
-			$lineItemQtys = $this->resolveAllocationLineItems($allocation, $order);
+			$lineItemQtys = $this->resolveAllocationLineItems($allocation, $lineItemIndex);
 			if ($lineItemQtys === []) {
 				Craft::warning("Veeqo allocation {$allocationId} on order {$order->reference}: no mappable line items; skipped.", Plugin::HANDLE);
 				continue;
@@ -181,25 +175,39 @@ class ShipmentPoller extends Component
 		return $order instanceof Order ? $order : null;
 	}
 
-	private function shipmentAllocationId(Shipment $shipment, int $integrationId): ?int
+	/**
+	 * Veeqo allocation id per shipment, in one reference query for the whole order.
+	 *
+	 * @param list<Shipment> $shipments
+	 * @return array<int, int>
+	 */
+	private function allocationIdsForShipments(array $shipments, int $integrationId): array
 	{
-		if ($shipment->id === null) {
-			return null;
-		}
-
-		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentId($shipment->id) as $integrationReference) {
-			if ($integrationReference->integrationId === $integrationId) {
-				return VeeqoReference::parseAllocationId($integrationReference->externalId);
+		$shipmentIds = [];
+		foreach ($shipments as $shipment) {
+			if ($shipment->id !== null) {
+				$shipmentIds[] = $shipment->id;
 			}
 		}
 
-		return null;
+		$allocationIdByShipmentId = [];
+		foreach ($this->shipments()->integrationReferences->getReferencesForShipmentIds($shipmentIds) as $shipmentId => $references) {
+			foreach ($references as $reference) {
+				if ($reference->integrationId !== $integrationId) {
+					continue;
+				}
+
+				$allocationId = VeeqoReference::parseAllocationId($reference->externalId);
+				if ($allocationId !== null) {
+					$allocationIdByShipmentId[$shipmentId] = $allocationId;
+				}
+			}
+		}
+
+		return $allocationIdByShipmentId;
 	}
 
 	/**
-	 * Creates a shipment for a new allocation, adopts a fresh one, or resizes a matched one, then tags
-	 * it with the allocation id so the next poll updates the right shipment.
-	 *
 	 * @param array<int, int> $lineItemQtys
 	 */
 	private function mirrorAllocation(Order $order, ?Shipment $shipment, array $lineItemQtys, string $handle, int $allocationId, int $veeqoOrderId, Integration $integration): ?Shipment
@@ -270,9 +278,6 @@ class ShipmentPoller extends Component
 	}
 
 	/**
-	 * Writes the allocation's status onto its shipment: cancelled flips status with no tracking; an
-	 * allocation that has shipped writes tracking; one not yet shipped is left open.
-	 *
 	 * @param array<array-key, mixed> $allocation
 	 */
 	private function applyAllocationTracking(Shipment $shipment, array $allocation, string $veeqoStatus, Integration $integration): void
@@ -353,16 +358,15 @@ class ShipmentPoller extends Component
 	}
 
 	/**
-	 * Maps a Veeqo allocation's line items to Craft order line item quantities. Purchasables resolve
-	 * through the sellable mapping; custom items resolve by SKU, including the synthetic custom code.
+	 * The order's line items indexed the two ways an allocation line can name them. Built once per
+	 * order, since every allocation on it resolves against the same set.
 	 *
-	 * @param array<array-key, mixed> $allocation
-	 * @return array<int, int> lineItemId => qty
+	 * @return array{bySellableId: array<int, int>, bySku: array<string, int>}
 	 */
-	private function resolveAllocationLineItems(array $allocation, Order $order): array
+	private function buildLineItemIndex(Order $order): array
 	{
-		$lineItemIdBySellableId = [];
 		$lineItemIdBySku = [];
+		$lineItemIdByPurchasableId = [];
 		foreach ($order->getLineItems() as $lineItem) {
 			if ($lineItem->id === null) {
 				continue;
@@ -374,12 +378,34 @@ class ShipmentPoller extends Component
 			}
 
 			if ($lineItem->purchasableId !== null) {
-				$mapping = $this->plugin()->sellableMappings->findByPurchasableId((int) $lineItem->purchasableId);
-				if ($mapping instanceof SellableMapping) {
-					$lineItemIdBySellableId[$mapping->veeqoSellableId] = $lineItem->id;
-				}
+				$lineItemIdByPurchasableId[(int) $lineItem->purchasableId] = $lineItem->id;
 			}
 		}
+
+		$sellableIds = Plugin::instance()->getSellableMappings()->getSellableIdsByPurchasableId(array_keys($lineItemIdByPurchasableId));
+
+		$lineItemIdBySellableId = [];
+		foreach ($sellableIds as $purchasableId => $sellableId) {
+			$lineItemIdBySellableId[$sellableId] = $lineItemIdByPurchasableId[$purchasableId];
+		}
+
+		return [
+			'bySellableId' => $lineItemIdBySellableId,
+			'bySku' => $lineItemIdBySku,
+		];
+	}
+
+	/**
+	 * Maps a Veeqo allocation's line items to Craft order line item quantities.
+	 *
+	 * @param array<array-key, mixed> $allocation
+	 * @param array{bySellableId: array<int, int>, bySku: array<string, int>} $lineItemIndex
+	 * @return array<int, int> lineItemId => qty
+	 */
+	private function resolveAllocationLineItems(array $allocation, array $lineItemIndex): array
+	{
+		$lineItemIdBySellableId = $lineItemIndex['bySellableId'];
+		$lineItemIdBySku = $lineItemIndex['bySku'];
 
 		$lines = $allocation['line_items'] ?? [];
 		if (! is_array($lines)) {
@@ -454,30 +480,10 @@ class ShipmentPoller extends Component
 		return isset($data[$key]) && is_scalar($data[$key]) ? trim((string) $data[$key]) : '';
 	}
 
-	private function plugin(): Plugin
-	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		return $plugin;
-	}
-
 	private function shipments(): ShipmentsPlugin
 	{
 		/** @var ShipmentsPlugin $plugin */
 		$plugin = ShipmentsPlugin::getInstance();
 		return $plugin;
-	}
-
-	/**
-	 * @throws IntegrationException
-	 * @throws PermanentIntegrationException
-	 */
-	private function rethrow(VeeqoApiException $veeqoApiException): never
-	{
-		if ($veeqoApiException->isRetryable()) {
-			throw new IntegrationException($veeqoApiException->getMessage(), 0, $veeqoApiException);
-		}
-
-		throw new PermanentIntegrationException($veeqoApiException->getMessage(), 0, $veeqoApiException);
 	}
 }

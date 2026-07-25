@@ -11,13 +11,14 @@ use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\commerce\records\Transaction as TransactionRecord;
 use craft\elements\Address;
-use craft\helpers\MoneyHelper;
+use craft\helpers\Json;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\AddressFields;
+use fostercommerce\shipments\veeqo\helpers\VeeqoPrice;
 use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use fostercommerce\shipments\veeqo\jobs\NotifyCancellationJob;
 use fostercommerce\shipments\veeqo\Plugin;
@@ -29,11 +30,7 @@ use yii\base\Component;
 use yii\db\IntegrityException;
 
 /**
- * Pushes a Commerce order to Veeqo as one Veeqo order. Veeqo auto-allocates it; the poll mirrors
- * each Veeqo allocation back as a Craft shipment.
- *
- * Veeqo has no idempotency keys and accepts duplicate order numbers, so a locally recorded claim
- * (the OrderPush record) is what stops a duplicate push.
+ * Veeqo order push service.
  */
 class OrderSync extends Component
 {
@@ -51,7 +48,7 @@ class OrderSync extends Component
 		$mutex = Craft::$app->getMutex();
 		$lockKey = 'shipments-veeqo:push:order:' . $order->id;
 		if (! $mutex->acquire($lockKey, 15)) {
-			throw new IntegrationException("Another push is in progress for order {$order->id}.");
+			throw new IntegrationException(Craft::t(Plugin::HANDLE, 'error.push.inProgress'));
 		}
 
 		try {
@@ -68,7 +65,7 @@ class OrderSync extends Component
 	 */
 	public function queueCancellationNote(Order $order, string $reason): void
 	{
-		$provider = $this->plugin()->getVeeqoProvider();
+		$provider = Plugin::instance()->getVeeqoProvider();
 		if (! $provider instanceof VeeqoProvider) {
 			return;
 		}
@@ -92,12 +89,12 @@ class OrderSync extends Component
 	private function doPushOrder(Order $order, VeeqoProvider $provider): void
 	{
 		if ($provider->channelId === null) {
-			throw new PermanentIntegrationException('Veeqo channel id is not configured on the integration.');
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noChannelId'));
 		}
 
 		$integration = $provider->getSourceIntegration();
 		if (! $integration instanceof Integration || $integration->id === null) {
-			throw new PermanentIntegrationException('Veeqo provider is not bound to a saved integration.');
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noIntegration'));
 		}
 
 		$orderId = (int) $order->id;
@@ -105,19 +102,23 @@ class OrderSync extends Component
 		$client = $provider->getClient();
 		$number = VeeqoReference::orderNumber($provider->orderIdPrefix, (string) $order->reference);
 
+		$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
+		if ($lineItemAttributes === []) {
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noLineItems'));
+		}
+
 		try {
-			$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
-			if ($lineItemAttributes === []) {
-				throw new PermanentIntegrationException("Order {$order->id} has no line items to push to Veeqo.");
-			}
+			$customerId = Plugin::instance()->getCustomerResolver()->resolveCustomerId($order, $client);
+		} catch (VeeqoApiException $veeqoApiException) {
+			throw $veeqoApiException->toIntegrationException();
+		}
 
-			$customerId = $this->plugin()->customerResolver->resolveCustomerId($order, $client);
+		if (! $this->claimPush($orderId, $integrationId, $number)) {
+			Craft::info("Veeqo order {$number} already pushed; skipping push.", Plugin::HANDLE);
+			return;
+		}
 
-			if (! $this->claimPush($orderId, $integrationId, $number)) {
-				Craft::info("Veeqo order {$number} already pushed; skipping push.", Plugin::HANDLE);
-				return;
-			}
-
+		try {
 			$response = $client->post('/orders', [
 				'order' => [
 					'channel_id' => $provider->channelId,
@@ -134,12 +135,19 @@ class OrderSync extends Component
 				],
 			]);
 		} catch (VeeqoApiException $veeqoApiException) {
-			$this->rethrow($veeqoApiException);
+			// A status code means Veeqo answered and created nothing, so dropping the claim lets a retry
+			// push. A transport error (status 0) may still have landed, and re-pushing would duplicate the
+			// order, so that claim stands and the order waits for someone to clear the row.
+			if ($veeqoApiException->getStatusCode() !== 0) {
+				$this->releaseClaim($orderId, $integrationId);
+			}
+
+			throw $veeqoApiException->toIntegrationException();
 		}
 
 		$veeqoOrderId = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : 0;
 		if ($veeqoOrderId === 0) {
-			throw new PermanentIntegrationException("Veeqo order create for order {$order->id} returned no id.");
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noOrderId'));
 		}
 
 		OrderPush::updateAll([
@@ -152,6 +160,8 @@ class OrderSync extends Component
 
 	/**
 	 * Records the intent to push, returning false when a push already holds this order.
+	 *
+	 * @throws PermanentIntegrationException
 	 */
 	private function claimPush(int $orderId, int $integrationId, string $number): bool
 	{
@@ -161,10 +171,29 @@ class OrderSync extends Component
 		$orderPush->veeqoOrderNumber = $number;
 
 		try {
-			return $orderPush->save();
+			$saved = $orderPush->save();
 		} catch (IntegrityException) {
 			return false;
 		}
+
+		// Veeqo accepts duplicate order numbers and has no idempotency key, so this row is the only
+		// thing stopping a second push. Only the unique index means "already pushed"; any other
+		// refusal would strand the order silently.
+		if (! $saved) {
+			throw new PermanentIntegrationException(
+				"Could not claim the Veeqo push for order {$orderId}: " . Json::encode($orderPush->getErrors()),
+			);
+		}
+
+		return true;
+	}
+
+	private function releaseClaim(int $orderId, int $integrationId): void
+	{
+		OrderPush::deleteAll([
+			'orderId' => $orderId,
+			'integrationId' => $integrationId,
+		]);
 	}
 
 	/**
@@ -187,36 +216,11 @@ class OrderSync extends Component
 			$attributes[] = [
 				'sellable_id' => $sellableId,
 				'quantity' => $lineItem->qty,
-				'price_per_unit' => $this->priceString((float) $lineItem->salePrice, $currencyCode),
+				'price_per_unit' => VeeqoPrice::decimal((float) $lineItem->salePrice, $currencyCode),
 			];
 		}
 
 		return $attributes;
-	}
-
-	/**
-	 * Format a price as the decimal string Veeqo expects, routing through Money so float dollar
-	 * values do not drift before they leave Craft.
-	 *
-	 * @throws PermanentIntegrationException
-	 */
-	private function priceString(float $amount, string $currencyCode): string
-	{
-		if ($currencyCode === '') {
-			throw new PermanentIntegrationException('Cannot format a Veeqo price without an order currency.');
-		}
-
-		$money = MoneyHelper::toMoney([
-			'value' => (string) $amount,
-			'currency' => $currencyCode,
-		]);
-		$decimal = $money === false ? false : MoneyHelper::toDecimal($money);
-
-		if ($decimal === false) {
-			throw new PermanentIntegrationException("Could not format price for currency “{$currencyCode}”.");
-		}
-
-		return $decimal;
 	}
 
 	/**
@@ -227,7 +231,7 @@ class OrderSync extends Component
 	 */
 	private function resolvePurchasableSellableId(LineItem $lineItem, VeeqoProvider $provider): int
 	{
-		$sellableMappings = $this->plugin()->sellableMappings;
+		$sellableMappings = Plugin::instance()->getSellableMappings();
 		$purchasableId = (int) $lineItem->purchasableId;
 
 		$mapping = $sellableMappings->findByPurchasableId($purchasableId);
@@ -238,18 +242,18 @@ class OrderSync extends Component
 		$variant = Craft::$app->getElements()->getElementById($purchasableId, Variant::class);
 		$product = $variant instanceof Variant ? $variant->getProduct() : null;
 		if (! $product instanceof Product) {
-			throw new PermanentIntegrationException(
-				"Purchasable {$purchasableId} is not a Commerce product variant; cannot sync to Veeqo.",
-			);
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.notAVariant', [
+				'description' => $lineItem->getDescription(),
+			]));
 		}
 
-		$this->plugin()->productSync->syncProduct($product, $provider);
+		Plugin::instance()->getProductSync()->syncProduct($product, $provider);
 
 		$mapping = $sellableMappings->findByPurchasableId($purchasableId);
 		if (! $mapping instanceof SellableMapping) {
-			throw new PermanentIntegrationException(
-				"Purchasable {$purchasableId} could not be synced to Veeqo; check that the variant has a SKU.",
-			);
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.variantNotSynced', [
+				'description' => $lineItem->getDescription(),
+			]));
 		}
 
 		return $mapping->veeqoSellableId;
@@ -264,11 +268,11 @@ class OrderSync extends Component
 	 */
 	private function resolveCustomSellableId(LineItem $lineItem, VeeqoProvider $provider): int
 	{
-		$sellableId = $this->plugin()->productSync->syncCustomLineItem($lineItem, $provider);
+		$sellableId = Plugin::instance()->getProductSync()->syncCustomLineItem($lineItem, $provider);
 		if ($sellableId === 0) {
-			throw new PermanentIntegrationException(
-				"Custom line item {$lineItem->id} could not be created as a Veeqo sellable.",
-			);
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.customItemFailed', [
+				'description' => $lineItem->getDescription(),
+			]));
 		}
 
 		return $sellableId;
@@ -294,7 +298,7 @@ class OrderSync extends Component
 			'state' => (string) $address->administrativeArea,
 			'zip' => (string) $address->postalCode,
 			'country' => $address->countryCode,
-			'phone' => AddressFields::phone($address),
+			'phone' => AddressFields::phone($address, (string) Plugin::instance()->getSettings()->phoneFieldHandle),
 		];
 	}
 
@@ -323,25 +327,5 @@ class OrderSync extends Component
 		}
 
 		return 'none';
-	}
-
-	private function plugin(): Plugin
-	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		return $plugin;
-	}
-
-	/**
-	 * @throws IntegrationException
-	 * @throws PermanentIntegrationException
-	 */
-	private function rethrow(VeeqoApiException $veeqoApiException): never
-	{
-		if ($veeqoApiException->isRetryable()) {
-			throw new IntegrationException($veeqoApiException->getMessage(), 0, $veeqoApiException);
-		}
-
-		throw new PermanentIntegrationException($veeqoApiException->getMessage(), 0, $veeqoApiException);
 	}
 }

@@ -37,7 +37,7 @@ class SyncProductJob extends BaseJob
 		}
 
 		try {
-			$plugin->productSync->syncProduct($product, $provider);
+			$plugin->getProductSync()->syncProduct($product, $provider);
 		} catch (VeeqoApiException $veeqoApiException) {
 			if ($veeqoApiException->isRetryable()) {
 				throw $veeqoApiException;

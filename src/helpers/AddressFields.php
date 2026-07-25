@@ -6,20 +6,15 @@ namespace fostercommerce\shipments\veeqo\helpers;
 
 use craft\base\FieldInterface;
 use craft\elements\Address;
-use fostercommerce\shipments\veeqo\Plugin;
 
-class AddressFields
+final class AddressFields
 {
 	/**
-	 * Phone number from the configured address field, or an empty string when no handle is set
-	 * or the field is absent from the address layout. Phone is optional to Veeqo, so a stale or
-	 * missing handle must not fail the push.
+	 * Phone number from the given field. Phone is optional to Veeqo, so a handle that no longer
+	 * exists on the address layout yields an empty string rather than failing the push.
 	 */
-	public static function phone(Address $address): string
+	public static function phone(Address $address, string $handle): string
 	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		$handle = (string) $plugin->getSettings()->phoneFieldHandle;
 		if ($handle === '') {
 			return '';
 		}

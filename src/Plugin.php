@@ -15,6 +15,7 @@ use craft\helpers\ElementHelper;
 use craft\log\MonologTarget;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\enums\Status;
+use fostercommerce\shipments\enums\TrackedOrderShippable;
 use fostercommerce\shipments\enums\TrackedOrderState;
 use fostercommerce\shipments\events\RegisterIntegrationsEvent;
 use fostercommerce\shipments\events\ShipmentStatusChangedEvent;
@@ -24,7 +25,7 @@ use fostercommerce\shipments\queue\jobs\PushShipmentJob;
 use fostercommerce\shipments\records\TrackedOrder;
 use fostercommerce\shipments\services\Integrations;
 use fostercommerce\shipments\services\Shipments;
-use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
+use fostercommerce\shipments\veeqo\helpers\SettingsFieldOptions;
 use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
 use fostercommerce\shipments\veeqo\models\Settings;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
@@ -42,12 +43,6 @@ use yii\db\AfterSaveEvent;
 
 /**
  * @property-read Settings $settings
- * @property-read ProductSync $productSync
- * @property-read SellableMappings $sellableMappings
- * @property-read OrderSync $orderSync
- * @property-read ShipmentPoller $shipmentPoller
- * @property-read StockSync $stockSync
- * @property-read CustomerResolver $customerResolver
  */
 class Plugin extends \craft\base\Plugin
 {
@@ -121,11 +116,63 @@ class Plugin extends \craft\base\Plugin
 		);
 	}
 
+	/**
+	 * Type-narrowed {@see getInstance}, which is never null from inside the plugin.
+	 */
+	public static function instance(): self
+	{
+		/** @var self $plugin */
+		$plugin = self::getInstance();
+		return $plugin;
+	}
+
 	public function getSettings(): Settings
 	{
 		/** @var Settings $settings */
 		$settings = parent::getSettings();
 		return $settings;
+	}
+
+	public function getProductSync(): ProductSync
+	{
+		/** @var ProductSync $service */
+		$service = $this->get('productSync');
+		return $service;
+	}
+
+	public function getSellableMappings(): SellableMappings
+	{
+		/** @var SellableMappings $service */
+		$service = $this->get('sellableMappings');
+		return $service;
+	}
+
+	public function getOrderSync(): OrderSync
+	{
+		/** @var OrderSync $service */
+		$service = $this->get('orderSync');
+		return $service;
+	}
+
+	public function getShipmentPoller(): ShipmentPoller
+	{
+		/** @var ShipmentPoller $service */
+		$service = $this->get('shipmentPoller');
+		return $service;
+	}
+
+	public function getStockSync(): StockSync
+	{
+		/** @var StockSync $service */
+		$service = $this->get('stockSync');
+		return $service;
+	}
+
+	public function getCustomerResolver(): CustomerResolver
+	{
+		/** @var CustomerResolver $service */
+		$service = $this->get('customerResolver');
+		return $service;
 	}
 
 	/**
@@ -160,7 +207,8 @@ class Plugin extends \craft\base\Plugin
 	{
 		return Craft::$app->getView()->renderTemplate(self::HANDLE . '/settings/index', [
 			'settings' => $this->getSettings(),
-			'imageFieldOptions' => ProductImageFields::options(),
+			'imageFieldOptions' => SettingsFieldOptions::productImageFields(),
+			'phoneFieldOptions' => SettingsFieldOptions::addressTextFields(),
 			'statusOptions' => Status::labelMap(),
 		]);
 	}
@@ -170,10 +218,6 @@ class Plugin extends \craft\base\Plugin
 		return new Settings();
 	}
 
-	/**
-	 * Queues a Veeqo product sync when a Commerce product is saved through a normal code path
-	 * (not propagation, not resaving, not a draft or revision).
-	 */
 	private function queueSyncOnProductSaved(ModelEvent $event): void
 	{
 		if (! $this->getSettings()->syncProducts) {
@@ -251,7 +295,7 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'shipment deleted'));
+		$this->queueCancellationNote(fn () => $this->getOrderSync()->queueCancellationNote($order, 'shipment deleted'));
 	}
 
 	private function noteOrderDeleted(Event $event): void
@@ -261,13 +305,9 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'order deleted'));
+		$this->queueCancellationNote(fn () => $this->getOrderSync()->queueCancellationNote($order, 'order deleted'));
 	}
 
-	/**
-	 * Fires when an order's tracked-order record updates; notes Veeqo only on the transition into
-	 * the ignored state (covers both an ignored order status and the requires-shipping toggle).
-	 */
 	private function noteOrderIgnored(AfterSaveEvent $event): void
 	{
 		$record = $event->sender;
@@ -275,7 +315,8 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		if ($record->state !== TrackedOrderState::Ignored->value || ! array_key_exists('state', $event->changedAttributes)) {
+		$reason = $this->cancellationReason($record, $event->changedAttributes);
+		if ($reason === null) {
 			return;
 		}
 
@@ -284,7 +325,27 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		$this->queueCancellationNote(fn () => $this->orderSync->queueCancellationNote($order, 'order no longer requires shipping'));
+		$this->queueCancellationNote(fn () => $this->getOrderSync()->queueCancellationNote($order, $reason));
+	}
+
+	/**
+	 * Why Veeqo should be told to cancel, or null when this save is not a reason to tell it.
+	 *
+	 * `state` and `shippable` are independent columns, so the two causes need separate checks.
+	 *
+	 * @param array<string, mixed> $changedAttributes
+	 */
+	private function cancellationReason(TrackedOrder $record, array $changedAttributes): ?string
+	{
+		if ($record->state === TrackedOrderState::Ignored->value && array_key_exists('state', $changedAttributes)) {
+			return 'order ignored in Craft';
+		}
+
+		if ($record->shippable === TrackedOrderShippable::No->value && array_key_exists('shippable', $changedAttributes)) {
+			return 'order no longer requires shipping';
+		}
+
+		return null;
 	}
 
 	/**

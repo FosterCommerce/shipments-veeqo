@@ -4,16 +4,16 @@ A **Veeqo provider** for the Foster Commerce Shipments plugin, plus product sync
 
 ## What it does
 
-- Adds Veeqo to the Shipments plugin's integration list, so shipments can be pushed to Veeqo from the control panel or queue.
-- Pushes the completed order to Veeqo as a single Veeqo order, matched back by the order number (Veeqo auto-allocates it for fulfilment).
-- Polls Veeqo on a schedule (Veeqo has no webhooks) and mirrors each Veeqo allocation back as a Craft shipment, writing that allocation's carrier and tracking. When Veeqo splits an order across warehouses, Craft reflects the split.
-- Syncs Commerce products and variants to Veeqo as products and sellables when they are saved.
-- Pulls stock from Veeqo into Commerce on a schedule, keeping inventory-tracked variants in step (Veeqo is the inventory source of truth).
+- Sends completed orders to Veeqo for your warehouse to pick and pack, from a button in the control panel or automatically at a status you choose.
+- Brings carrier and tracking details back into Craft on a schedule, so customers and staff see them without anyone retyping them.
+- Follows Veeqo when it splits an order across warehouses or ships it in stages, showing one Craft shipment per parcel with its own tracking.
+- Keeps your Veeqo catalogue in step with Commerce, creating or updating a Veeqo product whenever you save one in Craft.
+- Lets Veeqo drive stock levels in Commerce, so the two never disagree about what is available to sell.
 
 ## Requirements
 
 - Craft CMS `^5.0`
-- Craft Commerce `^5.0`
+- Craft Commerce `^5.3`
 - [Foster Commerce Shipments](https://github.com/fostercommerce/shipments) `dev-main`
 - PHP `^8.2`
 - A Veeqo account and API key
@@ -37,7 +37,7 @@ When a Commerce product is saved, the plugin queues a job that creates or update
 
 ## Polling
 
-Veeqo does not offer webhooks, so inbound tracking arrives by polling. You run the pull command on a cron schedule. See [`docs/installation.md`](./docs/installation.md) for the commands and example crontab.
+Veeqo does not offer webhooks, so inbound tracking arrives by polling. You run the pull command on a cron schedule. See [`docs/installation.md`](./docs/installation.md) for the commands and example crontab, and [working with Veeqo day to day](./docs/user-guide/day-to-day.md) for what a store admin sees.
 
 ## Stock sync
 

@@ -8,8 +8,10 @@ A Veeqo provider for the Foster Commerce Shipments plugin, plus product sync bet
 
 **Running the plugin day-to-day?**
 
-- [Installation](./installation.md) lists the console commands and an example crontab for the tracking and stock pulls.
+- [Working with Veeqo day to day](./user-guide/day-to-day.md), how orders reach Veeqo, how tracking comes back, and what to do when a push fails
+- [Installation](./installation.md), the console commands and an example crontab for the tracking and stock pulls
 
 **Building on top of the plugin?**
 
-- [Custom product payloads](./dev-guide/custom-product-payload.md), mutate the product data sent to Veeqo before it leaves Craft.
+- [Custom product payloads](./dev-guide/custom-product-payload.md), mutate the product data sent to Veeqo before it leaves Craft
+- [Allocation reconciliation](./roadmap.md), how the poll maps Veeqo allocations onto Craft shipments

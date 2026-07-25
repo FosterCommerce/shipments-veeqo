@@ -13,14 +13,10 @@ use yii\base\Component;
 use yii\base\Exception;
 
 /**
- * Persists the mapping between Craft Commerce purchasable IDs and Veeqo sellable/product IDs.
- * Populated by ProductSync and read by order-push code at payload-build time.
+ * Craft purchasable to Veeqo sellable mappings.
  */
 class SellableMappings extends Component
 {
-	/**
-	 * Returns the mapping for a Commerce purchasable, or null if none is cached.
-	 */
 	public function findByPurchasableId(int $purchasableId): ?SellableMapping
 	{
 		return SellableMapping::findOne([
@@ -28,9 +24,6 @@ class SellableMappings extends Component
 		]);
 	}
 
-	/**
-	 * Returns a mapping matching the given SKU, or null if none exists.
-	 */
 	public function findBySku(string $sku): ?SellableMapping
 	{
 		return SellableMapping::findOne([
@@ -38,14 +31,40 @@ class SellableMappings extends Component
 		]);
 	}
 
-	/**
-	 * Returns the mapping for a Veeqo sellable id, or null if none is cached.
-	 */
 	public function findByVeeqoSellableId(int $veeqoSellableId): ?SellableMapping
 	{
 		return SellableMapping::findOne([
 			'veeqoSellableId' => $veeqoSellableId,
 		]);
+	}
+
+	/**
+	 * Veeqo sellable ids for many purchasables in one query, keyed by purchasable id.
+	 *
+	 * @param list<int> $purchasableIds
+	 * @return array<int, int>
+	 */
+	public function getSellableIdsByPurchasableId(array $purchasableIds): array
+	{
+		if ($purchasableIds === []) {
+			return [];
+		}
+
+		/** @var list<array{purchasableId: int|string, veeqoSellableId: int|string}> $rows */
+		$rows = SellableMapping::find()
+			->select(['purchasableId', 'veeqoSellableId'])
+			->where([
+				'purchasableId' => $purchasableIds,
+			])
+			->asArray()
+			->all();
+
+		$sellableIdsByPurchasableId = [];
+		foreach ($rows as $row) {
+			$sellableIdsByPurchasableId[(int) $row['purchasableId']] = (int) $row['veeqoSellableId'];
+		}
+
+		return $sellableIdsByPurchasableId;
 	}
 
 	/**
@@ -65,8 +84,6 @@ class SellableMappings extends Component
 	}
 
 	/**
-	 * Creates or updates the mapping row for a purchasable.
-	 *
 	 * @throws Exception if the record fails to save
 	 */
 	public function upsert(int $purchasableId, string $sku, int $veeqoSellableId, int $veeqoProductId): SellableMapping
@@ -87,9 +104,6 @@ class SellableMappings extends Component
 		return $mapping;
 	}
 
-	/**
-	 * Removes the mapping for a purchasable, if any.
-	 */
 	public function deleteByPurchasableId(int $purchasableId): void
 	{
 		$mapping = $this->findByPurchasableId($purchasableId);

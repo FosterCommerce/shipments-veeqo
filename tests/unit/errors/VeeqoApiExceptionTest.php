@@ -23,11 +23,10 @@ final class VeeqoApiExceptionTest extends TestCase
 		}
 	}
 
-	public function testExposesStatusBodyAndRetryAfter(): void
+	public function testExposesStatusAndBody(): void
 	{
-		$exception = new VeeqoApiException(429, '{"error":"slow down"}', '6');
+		$exception = new VeeqoApiException(429, '{"error":"slow down"}');
 		self::assertSame(429, $exception->getStatusCode());
 		self::assertSame('{"error":"slow down"}', $exception->getResponseBody());
-		self::assertSame('6', $exception->getRetryAfter());
 	}
 }

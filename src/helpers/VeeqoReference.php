@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace fostercommerce\shipments\veeqo\helpers;
 
 /**
- * Veeqo identity helpers. A Craft shipment stores one Veeqo reference (its allocation id, prefixed),
- * and the Veeqo order is linked back to the Craft order through the order number rather than a
- * stored reference, since the reference table holds one external id per shipment.
+ * Veeqo identity helpers.
  */
 final class VeeqoReference
 {

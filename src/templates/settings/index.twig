@@ -31,15 +31,12 @@
 	errors: settings.getErrors('syncStock'),
 }) }}
 
-{% set addressLayout = craft.app.fields.getLayoutByType('craft\\elements\\Address') %}
-{% set plainTextFields = addressLayout.getCustomFields()|filter(field => className(field) == 'craft\\fields\\PlainText')|map(field => { label: field.name, value: field.handle }) %}
-
 {{ forms.selectField({
 	label: 'settings.phoneFieldLabel'|t('shipments-veeqo'),
 	instructions: 'settings.phoneFieldInstructions'|t('shipments-veeqo'),
 	name: 'settings[phoneFieldHandle]',
 	value: settings.phoneFieldHandle,
-	options: [{ label: 'settings.select.none'|t('shipments-veeqo'), value: '' }]|merge(plainTextFields),
+	options: [{ label: 'settings.select.none'|t('shipments-veeqo'), value: '' }]|merge(phoneFieldOptions),
 	errors: settings.getErrors('phoneFieldHandle'),
 }) }}
 

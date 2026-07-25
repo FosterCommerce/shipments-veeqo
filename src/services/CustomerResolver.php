@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace fostercommerce\shipments\veeqo\services;
 
+use Craft;
 use craft\commerce\elements\Order;
 use craft\elements\Address;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\AddressFields;
+use fostercommerce\shipments\veeqo\Plugin;
 use yii\base\Component;
 
 /**
- * Resolves a Veeqo customer id for a Commerce order, deduping by email.
- *
- * Veeqo requires a customer on every order and has no idempotency keys, so we look the customer
- * up by email before creating one. No local persistence; the lookup runs on every push.
+ * Veeqo customer resolver.
  */
 class CustomerResolver extends Component
 {
@@ -27,9 +26,10 @@ class CustomerResolver extends Component
 	{
 		$email = trim((string) $order->getEmail());
 		if ($email === '') {
-			throw new PermanentIntegrationException("Order {$order->id} has no email; Veeqo requires a customer.");
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noEmail'));
 		}
 
+		// Veeqo requires a customer on every order and dedupes nothing, so look before creating.
 		$existingId = $this->findCustomerIdByEmail($client, $email);
 		if ($existingId !== null) {
 			return $existingId;
@@ -39,7 +39,9 @@ class CustomerResolver extends Component
 
 		$id = isset($response['id']) && is_numeric($response['id']) ? (int) $response['id'] : null;
 		if ($id === null) {
-			throw new PermanentIntegrationException("Veeqo customer create for {$email} returned no id.");
+			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noCustomerId', [
+				'email' => $email,
+			]));
 		}
 
 		return $id;
@@ -60,7 +62,7 @@ class CustomerResolver extends Component
 			return $payload;
 		}
 
-		$phone = AddressFields::phone($address);
+		$phone = AddressFields::phone($address, (string) Plugin::instance()->getSettings()->phoneFieldHandle);
 		if ($phone !== '') {
 			$payload['phone'] = $phone;
 		}

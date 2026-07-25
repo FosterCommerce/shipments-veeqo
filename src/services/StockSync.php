@@ -13,13 +13,11 @@ use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
+use fostercommerce\shipments\veeqo\records\SellableMapping;
 use yii\base\Component;
 
 /**
- * Pulls available stock from Veeqo and writes it onto the matching Commerce purchasables.
- *
- * Veeqo is the source of truth (it dictates stock to its channels); this only writes into Commerce,
- * never back. Non-inventory-tracked purchasables are skipped, since Commerce treats them as unlimited.
+ * Veeqo stock sync service. One-way: Veeqo is the source of truth and is never written back to.
  */
 class StockSync extends Component
 {
@@ -31,7 +29,7 @@ class StockSync extends Component
 	{
 		$client = $provider->getClient();
 
-		foreach ($this->plugin()->sellableMappings->getAllVeeqoProductIds() as $veeqoProductId) {
+		foreach (Plugin::instance()->getSellableMappings()->getAllVeeqoProductIds() as $veeqoProductId) {
 			try {
 				$product = $client->get('/products/' . $veeqoProductId);
 			} catch (VeeqoApiException $veeqoApiException) {
@@ -58,7 +56,7 @@ class StockSync extends Component
 			return;
 		}
 
-		$sellableMappings = $this->plugin()->sellableMappings;
+		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		foreach ($sellables as $sellable) {
 			if (! is_array($sellable)) {
@@ -74,7 +72,7 @@ class StockSync extends Component
 			}
 
 			$mapping = $sellableMappings->findByVeeqoSellableId((int) $sellable['id']);
-			if ($mapping === null) {
+			if (! $mapping instanceof SellableMapping) {
 				continue;
 			}
 
@@ -86,15 +84,9 @@ class StockSync extends Component
 		}
 	}
 
-	private function plugin(): Plugin
-	{
-		/** @var Plugin $plugin */
-		$plugin = Plugin::getInstance();
-		return $plugin;
-	}
-
 	private function writeLevel(int $purchasableId, int $available): void
 	{
+		// Commerce treats an untracked purchasable as unlimited, so a level would mean nothing.
 		$variant = Variant::find()->id($purchasableId)->one();
 		if (! $variant instanceof Purchasable || ! $variant->inventoryTracked) {
 			return;

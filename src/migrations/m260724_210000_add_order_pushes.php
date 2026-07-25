@@ -35,10 +35,4 @@ class m260724_210000_add_order_pushes extends Migration
 
 		return true;
 	}
-
-	public function safeDown(): bool
-	{
-		$this->dropTableIfExists(Table::ORDER_PUSHES);
-		return true;
-	}
 }
