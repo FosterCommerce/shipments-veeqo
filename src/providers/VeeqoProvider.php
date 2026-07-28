@@ -26,11 +26,6 @@ class VeeqoProvider extends Provider
 
 	public string $orderIdPrefix = '';
 
-	/**
-	 * How far back (hours) `pull()` queries Veeqo for shipped orders on each run.
-	 */
-	public int $pollLookbackHours = 24;
-
 	private ?VeeqoApi $client = null;
 
 	public static function displayName(): string
@@ -109,9 +104,6 @@ class VeeqoProvider extends Provider
 		return array_merge(parent::defineRules(), [
 			[['apiKey', 'orderIdPrefix'], 'string'],
 			[['channelId'], 'integer'],
-			[['pollLookbackHours'],
-				'integer',
-				'min' => 1],
 			[['notifyCustomer'], 'boolean'],
 		]);
 	}

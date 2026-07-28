@@ -30,7 +30,9 @@ Veeqo `allocation.line_items[]` resolves to a Craft order line item by two paths
 
 ## Poll
 
-The order's rollup status sits at its least-progressed allocation, so a shipped allocation hides under any pre-shipped status (`awaiting_stock`, `awaiting_fulfillment`, and so on). The poll therefore does not filter by status: it reconciles every recent order (`created_at_min` lookback) plus a second `cancelled` pass, since cancelled orders are excluded from the default list. Foreign orders are skipped cheaply when the number does not resolve to a Craft order.
+The poll set comes from Craft, not from a window over Veeqo's dates: the distinct `veeqoOrderId`s in `shipmentsveeqo_order_pushes` whose order still holds a shipment at `new`, `in_progress`, or `on_hold`. Those ids are fetched in chunks of 100 through `order_ids[]`, which unlike an unfiltered list also returns cancelled orders. Foreign orders are skipped cheaply when the number does not resolve to a Craft order.
+
+The order's rollup status sits at its least-progressed allocation, so a shipped allocation hides under any pre-shipped status (`awaiting_stock`, `awaiting_fulfillment`, and so on). Tracking on the allocation is the per-allocation shipped signal, since allocations carry no status of their own; a `shipped` rollup covers the case where a parcel went out without a label.
 
 This also means pre-ship mirroring: Craft reflects Veeqo's allocation split as soon as it is allocated, before anything ships.
 

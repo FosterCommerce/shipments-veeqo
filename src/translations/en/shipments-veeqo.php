@@ -48,6 +48,4 @@ return [
 	'provider.orderIdPrefixInstructions' => 'Optional prefix applied to the reference sent to Veeqo.',
 	'provider.notifyCustomerLabel' => 'Notify customer from Veeqo',
 	'provider.notifyCustomerInstructions' => 'Whether Veeqo emails the customer when the order ships.',
-	'provider.pollLookbackLabel' => 'Poll lookback (hours)',
-	'provider.pollLookbackInstructions' => 'How far back each poll queries Veeqo for shipped orders.',
 ];

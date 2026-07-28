@@ -6,9 +6,9 @@ namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\commerce\elements\Order;
-use craft\helpers\DateTimeHelper;
-use DateTime;
-use DateTimeZone;
+use craft\db\Query;
+use craft\db\Table as CraftTable;
+use fostercommerce\shipments\db\Table as ShipmentsTable;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\enums\Status;
 use fostercommerce\shipments\errors\IntegrationException;
@@ -16,6 +16,7 @@ use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\models\ShipmentUpdatePayload;
 use fostercommerce\shipments\Plugin as ShipmentsPlugin;
+use fostercommerce\shipments\veeqo\db\Table;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use fostercommerce\shipments\veeqo\Plugin;
@@ -33,6 +34,16 @@ class ShipmentPoller extends Component
 	public const PAGE_SIZE = 100;
 
 	/**
+	 * Shipment statuses that keep an order in the poll set. A terminal status drops it, including one
+	 * a CP user set by hand.
+	 */
+	private const OPEN_STATUSES = [
+		Status::New->value,
+		Status::InProgress->value,
+		Status::OnHold->value,
+	];
+
+	/**
 	 * @throws IntegrationException
 	 * @throws PermanentIntegrationException
 	 */
@@ -45,49 +56,59 @@ class ShipmentPoller extends Component
 		}
 
 		$client = $provider->getClient();
-		$createdAtMin = DateTimeHelper::now()
-			->modify('-' . $provider->pollLookbackHours . ' hours')
-			->setTimezone(new DateTimeZone('UTC'))
-			->format(DateTime::ATOM);
 
-		// The order's rollup status sits at its least-progressed allocation, so a shipped allocation
-		// hides under any pre-shipped status. Reconcile every recent order rather than filter by
-		// status; cancelled orders are excluded from the default list, so pull them separately.
-		$this->pollOrders($client, $provider, [
-			'created_at_min' => $createdAtMin,
-		], $integration);
-		$this->pollOrders($client, $provider, [
-			'status' => 'cancelled',
-			'created_at_min' => $createdAtMin,
-		], $integration);
-	}
-
-	/**
-	 * @param array<string, mixed> $query
-	 * @throws IntegrationException
-	 * @throws PermanentIntegrationException
-	 */
-	private function pollOrders(VeeqoApi $client, VeeqoProvider $provider, array $query, Integration $integration): void
-	{
-		$page = 1;
-		do {
+		// An order can ship or be cancelled any length of time after it was raised, so the set to poll
+		// is whatever Craft still counts as unfinished rather than a window over Veeqo's dates.
+		foreach (array_chunk($this->openVeeqoOrderIds((int) $integration->id), self::PAGE_SIZE) as $veeqoOrderIds) {
 			try {
-				$result = $client->getPage('/orders', $query + [
-					'page' => $page,
+				// Fetching by id returns cancelled orders, which an unfiltered list leaves out.
+				$veeqoOrders = $client->get('/orders', [
+					'order_ids' => $veeqoOrderIds,
 					'page_size' => self::PAGE_SIZE,
 				]);
 			} catch (VeeqoApiException $veeqoApiException) {
 				throw $veeqoApiException->toIntegrationException();
 			}
 
-			foreach ($result['items'] as $veeqoOrder) {
+			foreach ($veeqoOrders as $veeqoOrder) {
 				if (is_array($veeqoOrder)) {
 					$this->reconcileOrder($veeqoOrder, $provider, $integration);
 				}
 			}
+		}
+	}
 
-			$page++;
-		} while ($page <= $result['totalPages']);
+	/**
+	 * Veeqo ids of the orders still holding an open shipment.
+	 *
+	 * @return list<int>
+	 */
+	private function openVeeqoOrderIds(int $integrationId): array
+	{
+		$veeqoOrderIds = (new Query())
+			->select(['pushes.veeqoOrderId'])
+			->distinct()
+			->from([
+				'pushes' => Table::ORDER_PUSHES,
+			])
+			->innerJoin([
+				'shipments' => ShipmentsTable::SHIPMENTS,
+			], '[[shipments.orderId]] = [[pushes.orderId]]')
+			->innerJoin([
+				'elements' => CraftTable::ELEMENTS,
+			], '[[elements.id]] = [[shipments.id]]')
+			->where([
+				'pushes.integrationId' => $integrationId,
+				'shipments.status' => self::OPEN_STATUSES,
+				'elements.dateDeleted' => null,
+			])
+			->andWhere([
+				'not', [
+					'pushes.veeqoOrderId' => null,
+				]])
+			->column();
+
+		return array_map(intval(...), $veeqoOrderIds);
 	}
 
 	/**
@@ -100,6 +121,13 @@ class ShipmentPoller extends Component
 			return;
 		}
 
+		// Veeqo strips a cancelled order's allocations, so this runs ahead of the guard below.
+		$veeqoStatus = $this->stringField($veeqoOrder, 'status');
+		if ($veeqoStatus === 'cancelled') {
+			$this->cancelOpenShipments($order, $integration);
+			return;
+		}
+
 		$allocations = $veeqoOrder['allocations'] ?? [];
 		if (! is_array($allocations) || $allocations === []) {
 			// Never reconcile off an empty set: a momentary zero-allocation read (mid-reallocation)
@@ -108,7 +136,6 @@ class ShipmentPoller extends Component
 		}
 
 		$veeqoOrderId = $this->intField($veeqoOrder, 'id');
-		$veeqoStatus = $this->stringField($veeqoOrder, 'status');
 		$integrationId = (int) $integration->id;
 		$handle = (string) $provider->handle;
 
@@ -156,6 +183,24 @@ class ShipmentPoller extends Component
 		}
 
 		$this->deleteOrphanedShipments($shipmentByAllocationId, $seenAllocationIds, $integrationId);
+	}
+
+	private function cancelOpenShipments(Order $order, Integration $integration): void
+	{
+		$payload = new ShipmentUpdatePayload();
+		$payload->targetStatusCode = Status::Cancelled->value;
+
+		foreach ($this->shipments()->shipments->findByOrderId((int) $order->id) as $shipment) {
+			if (! in_array($shipment->status, self::OPEN_STATUSES, true)) {
+				continue;
+			}
+
+			try {
+				$this->shipments()->shipments->applyUpdate($shipment, $payload, null, $integration, 'cancelled');
+			} catch (Throwable $throwable) {
+				Craft::error("Failed to cancel shipment {$shipment->id} from Veeqo: " . $throwable->getMessage(), Plugin::HANDLE);
+			}
+		}
 	}
 
 	/**
@@ -282,28 +327,23 @@ class ShipmentPoller extends Component
 	 */
 	private function applyAllocationTracking(Shipment $shipment, array $allocation, string $veeqoStatus, Integration $integration): void
 	{
+		// An allocation is shipped when it carries a shipment with tracking, regardless of the order's
+		// rollup status: a backordered order stays awaiting_stock with shipped allocations. Tracking can
+		// be absent though, since a warehouse can ship without a label, and allocations carry no status
+		// of their own, so a shipped rollup is the only remaining signal.
+		$tracking = $this->extractTracking($allocation);
+		if ($tracking === null && $veeqoStatus !== 'shipped') {
+			return;
+		}
+
 		$payload = new ShipmentUpdatePayload();
+		$payload->targetStatusCode = Status::Shipped->value;
 
-		if ($veeqoStatus === 'cancelled') {
-			$payload->targetStatusCode = Status::Cancelled->value;
-		} else {
-			// An allocation is shipped when it carries a shipment with tracking, regardless of the
-			// order's rollup status: a backordered order stays awaiting_stock with shipped allocations.
-			// Tracking can be absent though, since a warehouse can ship without a label, and allocations
-			// carry no status of their own, so a shipped rollup is the only remaining signal.
-			$tracking = $this->extractTracking($allocation);
-			if ($tracking === null && $veeqoStatus !== 'shipped') {
-				return;
-			}
-
-			$payload->targetStatusCode = Status::Shipped->value;
-
-			if ($tracking !== null) {
-				$payload->trackingNumber = $tracking['trackingNumber'];
-				$payload->trackingUrl = $tracking['trackingUrl'];
-				$payload->carrier = $tracking['carrier'];
-				$payload->service = $tracking['service'];
-			}
+		if ($tracking !== null) {
+			$payload->trackingNumber = $tracking['trackingNumber'];
+			$payload->trackingUrl = $tracking['trackingUrl'];
+			$payload->carrier = $tracking['carrier'];
+			$payload->service = $tracking['service'];
 		}
 
 		if (! $payload->validate()) {

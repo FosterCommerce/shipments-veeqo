@@ -41,11 +41,6 @@ class VeeqoApi extends Component
 	public const MIN_REQUEST_INTERVAL_SECONDS = 0.25;
 
 	/**
-	 * Header carrying the total page count on paginated list responses.
-	 */
-	public const TOTAL_PAGES_HEADER = 'X-Total-Pages-Count';
-
-	/**
 	 * API key or `$ENV_VAR` reference; resolved through `App::parseEnv` before each request.
 	 */
 	public string $apiKey = '';
@@ -64,27 +59,6 @@ class VeeqoApi extends Component
 		return $this->decode($this->send('GET', $path, [
 			'query' => $query,
 		]));
-	}
-
-	/**
-	 * GET a paginated collection, returning the decoded items plus the total page count.
-	 *
-	 * @param array<string, mixed> $query
-	 * @return array{items: array<array-key, mixed>, totalPages: int}
-	 * @throws VeeqoApiException
-	 */
-	public function getPage(string $path, array $query = []): array
-	{
-		$response = $this->send('GET', $path, [
-			'query' => $query,
-		]);
-
-		$totalPages = (int) $response->getHeaderLine(self::TOTAL_PAGES_HEADER);
-
-		return [
-			'items' => $this->decode($response),
-			'totalPages' => max($totalPages, 1),
-		];
 	}
 
 	/**

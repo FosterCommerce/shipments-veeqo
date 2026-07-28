@@ -66,8 +66,8 @@ Some failures retry on their own. If Veeqo was busy or briefly unavailable, the 
 
 If an order shipped in Veeqo but Craft still shows it open, check in this order:
 
-1. **Is there a tracking number in Veeqo?** Craft only marks a shipment shipped once its parcel has one.
-2. **How old is the order?** Each run only looks back a set number of hours, set by **Poll lookback (hours)** on the integration. An older order falls outside the window.
+1. **Does Veeqo show the order as shipped?** Craft marks a shipment shipped when its parcel has a tracking number, or when Veeqo reports the whole order as shipped.
+2. **Do the Craft shipments still show as open?** Craft only asks Veeqo about orders holding a shipment at **New**, **In progress**, or **On hold**. Once every shipment on an order reaches **Fulfilled**, **Shipped**, or **Cancelled**, that order stops being checked. Setting one of those statuses by hand has the same effect.
 3. **Was it raised in Veeqo rather than Craft?** Craft only recognises orders whose Veeqo number matches a Craft order reference.
 
 If all three look right, ask a developer to check the plugin log.

@@ -63,7 +63,6 @@ Veeqo is a provider on the Shipments plugin, configured per integration.
 - **Channel id**: the Veeqo sales-channel id pushed orders belong to. Allocation follows this channel's default warehouse.
 - **Order reference prefix**: optional prefix applied to the reference sent to Veeqo.
 - **Notify customer from Veeqo**: whether Veeqo emails the customer when the order ships. Default: off.
-- **Poll lookback (hours)**: how far back each poll queries Veeqo for shipped orders. Default: 24.
 
 Save. The integration's connection check validates the API key against `/current_company`.
 
@@ -133,12 +132,14 @@ Veeqo has no webhooks and the plugin exposes no endpoint for Veeqo to call. Inbo
 
 Craft pushes a whole order to Veeqo as one Veeqo order. Veeqo then splits it into one or more **allocations**, one per parcel it intends to ship, and each allocation carries its own line items and tracking. The poll mirrors that split: every allocation becomes one Craft shipment.
 
-Each run walks the Veeqo orders created inside the **Poll lookback (hours)** window, matches each one to a Craft order by its number (the **Order reference prefix** plus the Craft order reference), and reconciles that order's shipments against its allocations:
+Each run asks Veeqo about the orders Craft still counts as unfinished: any order holding a shipment at **New**, **In progress**, or **On hold**. There is no date window, so an order picked up a year after it was raised is still reconciled. An order whose shipments have all reached **Fulfilled**, **Shipped**, or **Cancelled** is no longer queried, including when someone set that status by hand in Craft.
+
+Each order it fetches is reconciled against its allocations:
 
 - An allocation with no matching Craft shipment creates one.
 - An allocation whose shipment already exists has its line items resized to match.
 - A shipment whose allocation no longer exists is trashed, but only while it is still **New**. A shipment that already shipped is kept and logged.
-- Each shipment then takes its own allocation's tracking. An allocation with no tracking number is left open.
+- Each shipment then takes its own allocation's tracking. A shipment with no tracking number still moves to **Shipped** once Veeqo reports the order as shipped, so a parcel sent without a label is not left open.
 
 Veeqo is the source of truth after the push. If you edit a mirrored shipment's line items in Craft, the next poll overwrites them.
 
@@ -152,11 +153,11 @@ To test that a Veeqo shipment is captured in Craft:
    ```
 4. Open the order's Shipments tab in Craft and confirm there is one shipment per Veeqo allocation, each **Shipped** with its own tracking number, URL, and carrier, and that the **Status history** tab shows the transition with the integration as the source.
 
-If nothing changes, check the usual causes: the Veeqo allocation has no tracking number, the Veeqo order was created outside the **Poll lookback (hours)** window, or its number does not resolve to a Craft order reference (a wrong or missing **Order reference prefix**, or an order raised directly in Veeqo).
+If nothing changes, check the usual causes: every Craft shipment on the order already sits at a terminal status, so the order is no longer polled, or its number does not resolve to a Craft order reference (a wrong or missing **Order reference prefix**, or an order raised directly in Veeqo).
 
 ## Cancellations
 
-**Veeqo to Craft:** the inbound poll also queries `cancelled` orders. When a pushed Veeqo order is cancelled (in the Veeqo UI), the next `sync/pull` flips the matching Craft shipment to the `Cancelled` status. No tracking is required for this transition.
+**Veeqo to Craft:** when a pushed Veeqo order is cancelled (in the Veeqo UI), the next `sync/pull` flips the order's open Craft shipments to the `Cancelled` status. Veeqo drops a cancelled order's allocations, so this runs off the order's status rather than its parcels. Shipments already at a terminal status are left alone.
 
 **Craft to Veeqo:** Veeqo's API has **no way to cancel or delete an order** (`status` is not writable, and there is no cancel or delete endpoint), so a Craft-side cancellation cannot set the Veeqo order to cancelled. Instead, the plugin posts an employee note on the Veeqo order prompting a warehouse user to cancel it manually. A note is queued when:
 
