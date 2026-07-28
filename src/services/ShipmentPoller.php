@@ -289,16 +289,21 @@ class ShipmentPoller extends Component
 		} else {
 			// An allocation is shipped when it carries a shipment with tracking, regardless of the
 			// order's rollup status: a backordered order stays awaiting_stock with shipped allocations.
+			// Tracking can be absent though, since a warehouse can ship without a label, and allocations
+			// carry no status of their own, so a shipped rollup is the only remaining signal.
 			$tracking = $this->extractTracking($allocation);
-			if ($tracking === null) {
+			if ($tracking === null && $veeqoStatus !== 'shipped') {
 				return;
 			}
 
 			$payload->targetStatusCode = Status::Shipped->value;
-			$payload->trackingNumber = $tracking['trackingNumber'];
-			$payload->trackingUrl = $tracking['trackingUrl'];
-			$payload->carrier = $tracking['carrier'];
-			$payload->service = $tracking['service'];
+
+			if ($tracking !== null) {
+				$payload->trackingNumber = $tracking['trackingNumber'];
+				$payload->trackingUrl = $tracking['trackingUrl'];
+				$payload->carrier = $tracking['carrier'];
+				$payload->service = $tracking['service'];
+			}
 		}
 
 		if (! $payload->validate()) {

@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed an issue where an order shipped in Veeqo without a tracking number left its Craft shipment at its previous status.
 - Fixed a bug where an order that hit a Veeqo rate limit or server error during a push could never be pushed again, and the retry reported success.
 - Fixed a bug where a cancellation note posted to Veeqo named the wrong reason for an order taken out of fulfillment.
 - Fixed an issue where an order that stopped requiring shipping did not post a cancellation note to Veeqo.
