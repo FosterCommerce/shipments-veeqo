@@ -25,6 +25,7 @@ return [
 
 	// Queue jobs
 	'queue.notifyCancellation' => 'Notifying Veeqo of a cancellation',
+	'queue.pushingAllocations' => 'Sending order {id} shipments to Veeqo',
 	'job.syncProduct' => 'Syncing product {id} to Veeqo',
 
 	// Push failures, shown on the shipment's Details tab in the control panel

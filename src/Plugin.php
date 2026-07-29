@@ -18,6 +18,7 @@ use fostercommerce\shipments\enums\Status;
 use fostercommerce\shipments\enums\TrackedOrderShippable;
 use fostercommerce\shipments\enums\TrackedOrderState;
 use fostercommerce\shipments\events\RegisterIntegrationsEvent;
+use fostercommerce\shipments\events\ShipmentLineItemsChangedEvent;
 use fostercommerce\shipments\events\ShipmentStatusChangedEvent;
 use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\Plugin as ShipmentsPlugin;
@@ -26,10 +27,12 @@ use fostercommerce\shipments\records\TrackedOrder;
 use fostercommerce\shipments\services\Integrations;
 use fostercommerce\shipments\services\Shipments;
 use fostercommerce\shipments\veeqo\helpers\SettingsFieldOptions;
+use fostercommerce\shipments\veeqo\jobs\PushAllocationsJob;
 use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
 use fostercommerce\shipments\veeqo\models\Settings;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
 use fostercommerce\shipments\veeqo\records\OrderPush;
+use fostercommerce\shipments\veeqo\services\AllocationSync;
 use fostercommerce\shipments\veeqo\services\CustomerResolver;
 use fostercommerce\shipments\veeqo\services\OrderSync;
 use fostercommerce\shipments\veeqo\services\ProductSync;
@@ -50,7 +53,7 @@ class Plugin extends \craft\base\Plugin
 
 	public bool $hasCpSettings = true;
 
-	public string $schemaVersion = '1.1.0';
+	public string $schemaVersion = '1.2.0';
 
 	public function init(): void
 	{
@@ -65,6 +68,7 @@ class Plugin extends \craft\base\Plugin
 		]);
 
 		$this->setComponents([
+			'allocationSync' => AllocationSync::class,
 			'productSync' => ProductSync::class,
 			'sellableMappings' => SellableMappings::class,
 			'orderSync' => OrderSync::class,
@@ -95,6 +99,12 @@ class Plugin extends \craft\base\Plugin
 			Shipments::class,
 			Shipments::EVENT_SHIPMENT_STATUS_CHANGED,
 			$this->pushOnStatusReached(...),
+		);
+
+		Event::on(
+			Shipments::class,
+			Shipments::EVENT_SHIPMENT_LINE_ITEMS_CHANGED,
+			$this->pushAllocationsOnLineItemsChanged(...),
 		);
 
 		Event::on(
@@ -131,6 +141,13 @@ class Plugin extends \craft\base\Plugin
 		/** @var Settings $settings */
 		$settings = parent::getSettings();
 		return $settings;
+	}
+
+	public function getAllocationSync(): AllocationSync
+	{
+		/** @var AllocationSync $service */
+		$service = $this->get('allocationSync');
+		return $service;
 	}
 
 	public function getProductSync(): ProductSync
@@ -268,12 +285,12 @@ class Plugin extends \craft\base\Plugin
 			return;
 		}
 
-		// A shipment the poll mirrors back reaches this status with no source integration, so the
-		// claim is what tells the two apart.
+		// The order already has its Veeqo order, so this shipment splits it rather than starting it.
 		if (OrderPush::find()->where([
 			'orderId' => $event->shipment->orderId,
 			'integrationId' => $integration->id,
 		])->exists()) {
+			$this->queueAllocationPush((int) $event->shipment->orderId);
 			return;
 		}
 
@@ -283,8 +300,42 @@ class Plugin extends \craft\base\Plugin
 		]));
 	}
 
+	/**
+	 * @throws Throwable
+	 */
+	private function pushAllocationsOnLineItemsChanged(ShipmentLineItemsChangedEvent $event): void
+	{
+		$this->queueAllocationPush((int) $event->order->id);
+	}
+
+	/**
+	 * Queues the order's split for Veeqo, unless the poll wrote it and would push it straight back out.
+	 *
+	 * @throws Throwable
+	 */
+	private function queueAllocationPush(int $orderId): void
+	{
+		if ($this->getShipmentPoller()->isMirroring) {
+			return;
+		}
+
+		if (! $this->getVeeqoProvider() instanceof VeeqoProvider) {
+			return;
+		}
+
+		Craft::$app->getQueue()->push(new PushAllocationsJob([
+			'orderId' => $orderId,
+		]));
+	}
+
 	private function noteShipmentDeleted(Event $event): void
 	{
+		// A poll deletes the Craft shipments left over when Veeqo merges allocations. That is Veeqo
+		// reshaping its own order, not a cancellation to report back to it.
+		if ($this->getShipmentPoller()->isMirroring) {
+			return;
+		}
+
 		$shipment = $event->sender;
 		if (! $shipment instanceof Shipment) {
 			return;
@@ -292,6 +343,15 @@ class Plugin extends \craft\base\Plugin
 
 		$order = $shipment->getOrder();
 		if (! $order instanceof Order) {
+			return;
+		}
+
+		/** @var ShipmentsPlugin $shipmentsPlugin */
+		$shipmentsPlugin = ShipmentsPlugin::getInstance();
+
+		// Shipments still standing mean the order was re-split, not called off.
+		if ($shipmentsPlugin->shipments->findByOrderId((int) $order->id) !== []) {
+			$this->queueAllocationPush((int) $order->id);
 			return;
 		}
 

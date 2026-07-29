@@ -157,6 +157,13 @@ class ProductSync extends Component
 			$sku = self::CUSTOM_SKU_PREFIX . $lineItem->id;
 		}
 
+		// Veeqo accepts duplicate SKUs, so every order carrying the same custom item would otherwise
+		// add another product for it.
+		$existing = $this->findSellableBySku($sku, $provider);
+		if ($existing !== null) {
+			return $existing['sellableId'];
+		}
+
 		$currencyCode = (string) $lineItem->getOrder()?->getStore()->getCurrency()?->getCode();
 
 		$response = $provider->getClient()->post('/products', [

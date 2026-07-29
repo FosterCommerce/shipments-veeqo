@@ -53,7 +53,8 @@ This also means pre-ship mirroring: Craft reflects Veeqo's allocation split as s
 - Coverage can be legitimately partial. A backordered order ships what it has and leaves the rest unallocated, so the order's shipments need not cover every line item. `enforceCoverage` must be off for the store (it blocks the status write otherwise; see Decisions).
 - Idempotent: re-running against an unchanged allocation set is a no-op.
 - One Veeqo allocation maps to one Craft shipment, keyed by allocation id.
-- Veeqo is authoritative after push: a reconcile pass overwrites the Craft split to match Veeqo, including a manually edited shipment. A merged-away allocation deletes its `New` Craft shipment.
+- Last writer wins: a Craft edit pushes its split to Veeqo, and a poll mirrors Veeqo's allocations back, each skipping the orders the other wrote more recently. `shipmentsveeqo_order_pushes.dateAllocationsSynced` records when the two last agreed. A merged-away allocation deletes its `New` Craft shipment.
+- Veeqo ignores line-item edits on an existing allocation, so a changed allocation is deleted and recreated. Allocation ids are therefore stable only while contents are unchanged.
 
 ## Parent plugin APIs relied on
 
@@ -68,7 +69,7 @@ This also means pre-ship mirroring: Craft reflects Veeqo's allocation split as s
 
 1. Orphaned shipment on allocation removal: delete it, but only when still `New`. A Shipped orphan is kept (real fulfilment record).
 2. Custom line items: reverse map by SKU (synthetic `custom-{lineItemId}` recovers the id).
-3. Human-edited shipment conflict: Veeqo wins; reconcile overwrites.
+3. Human-edited shipment conflict: last writer wins, compared against `dateAllocationsSynced`.
 4. References: `alloc:` per shipment; order linked by number; cancellation by number lookup. Push dedup is a local claim row written before the create: Veeqo's number lookup lags a create by seconds and `number` is not unique.
 5. Poll: no status filter (all recent orders plus a cancelled pass), since a shipped allocation can hide under any rollup status.
 6. `enforceCoverage` is turned off for the store, because the Veeqo mirror legitimately produces partially covered orders (backorders). Alternative not taken: make the parent plugin skip coverage for integration-sourced updates.

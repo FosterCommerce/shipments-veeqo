@@ -8,6 +8,13 @@
 
 ### Fixed
 
+- Fixed a bug where splitting or editing an order's shipments in Craft never reached Veeqo.
+- Fixed a bug where editing a shipment's line items in Craft stopped that order receiving tracking and shipped status from Veeqo.
+- Fixed a bug where Veeqo merging an order's parcels made Craft ask for that order to be cancelled.
+- Fixed a bug where deleting one of an order's shipments asked Veeqo to cancel the whole order.
+- Fixed a bug where “Push to Veeqo” did nothing on an order already sent to Veeqo.
+- Fixed a bug where every order containing the same custom line item added another product to Veeqo.
+- Fixed an issue where an order could stop syncing to Veeqo after a connection failure during its push.
 - Fixed a bug where an order shipped in Veeqo a day or more after it was raised was never picked up by the poll.
 - Fixed a bug where an order cancelled in Veeqo left its Craft shipments open.
 - Fixed an issue where an order shipped in Veeqo without a tracking number left its Craft shipment at its previous status.

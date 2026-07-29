@@ -8,7 +8,7 @@ This page assumes the integration is already configured. See [Installation](../i
 
 An order goes to Veeqo as a whole, once. It is sent when a shipment on that order reaches the status set in **Auto-push to Veeqo at status**, or when you press **Push to Veeqo** on a shipment yourself.
 
-Only the first push counts. Once an order is in Veeqo, pressing the button again on that order or on any of its other shipments does nothing, so there is no way to create the same order twice by clicking twice.
+Only the first push creates the order. Pressing the button again on that order sends its current split instead, so there is no way to create the same order twice by clicking twice.
 
 The order arrives in Veeqo already marked as paid, so it lands ready to pick rather than waiting for payment.
 
@@ -25,15 +25,21 @@ Craft shows one shipment per allocation. A scheduled job asks Veeqo what changed
 
 Nothing appears instantly. Updates arrive the next time the scheduled job runs, typically within ten to fifteen minutes.
 
-### Veeqo wins
+### Changing the split from Craft
 
-After an order has been pushed, Veeqo is in charge of how it is split. If you edit the line items on a mirrored shipment in Craft, the next update from Veeqo will put them back. Make the change in Veeqo instead.
+You can also change the split from the order's Shipments tab. Move line items between shipments, change a quantity, add a shipment, or delete one, and Veeqo's parcels are updated to match within a minute or so.
+
+Whichever side changed the split last is the one that stands. A poll leaves your Craft edits alone until they have reached Veeqo, and once they have, later changes made in Veeqo come back to Craft as usual.
+
+Shipments that have already shipped are not restructured from either side.
 
 ## Cancelling
 
 Veeqo does not let anything cancel an order through its API, so Craft cannot cancel one for you. Instead, Craft posts a note on the Veeqo order asking a warehouse user to cancel it there.
 
-A note is posted when you delete a shipment, delete an order, ignore an order, or change an order so that it no longer needs shipping. The note says which of those happened. Someone still has to act on it in Veeqo, so treat it as a message, not as a cancellation.
+A note is posted when you delete an order's last remaining shipment, delete an order, ignore an order, or change an order so that it no longer needs shipping. The note says which of those happened. Someone still has to act on it in Veeqo, so treat it as a message, not as a cancellation.
+
+Deleting one shipment while others remain is a change to the split, not a cancellation, so it drops that parcel in Veeqo and posts no note.
 
 An order that was never pushed has nothing in Veeqo to write to, so no note is posted.
 

@@ -10,7 +10,9 @@ use craft\web\View;
 use fostercommerce\shipments\base\Provider;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
+use fostercommerce\shipments\models\Integration;
 use fostercommerce\shipments\veeqo\Plugin;
+use fostercommerce\shipments\veeqo\records\OrderPush;
 use fostercommerce\shipments\veeqo\services\VeeqoApi;
 
 /**
@@ -57,6 +59,15 @@ class VeeqoProvider extends Provider
 	 */
 	public function sendShipment(Shipment $shipment, Order $order): void
 	{
+		Plugin::instance()->getOrderSync()->settleUnfinishedPush($order, $this);
+
+		// Once the order exists in Veeqo there is nothing left to send but its split, and a second
+		// order push would only be refused by the claim.
+		if ($this->hasBeenPushed($order)) {
+			Plugin::instance()->getAllocationSync()->pushAllocations($order, $this);
+			return;
+		}
+
 		Plugin::instance()->getOrderSync()->pushShipment($shipment, $order, $this);
 	}
 
@@ -106,5 +117,20 @@ class VeeqoProvider extends Provider
 			[['channelId'], 'integer'],
 			[['notifyCustomer'], 'boolean'],
 		]);
+	}
+
+	private function hasBeenPushed(Order $order): bool
+	{
+		$integration = $this->getSourceIntegration();
+		if (! $integration instanceof Integration) {
+			return false;
+		}
+
+		return OrderPush::find()
+			->where([
+				'orderId' => $order->id,
+				'integrationId' => $integration->id,
+			])
+			->exists();
 	}
 }

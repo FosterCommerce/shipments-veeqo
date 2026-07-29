@@ -14,4 +14,4 @@ A Veeqo provider for the Foster Commerce Shipments plugin, plus product sync bet
 **Building on top of the plugin?**
 
 - [Custom product payloads](./dev-guide/custom-product-payload.md), mutate the product data sent to Veeqo before it leaves Craft
-- [Allocation reconciliation](./roadmap.md), how the poll maps Veeqo allocations onto Craft shipments
+- [Allocation reconciliation](./roadmap.md), how Craft shipments and Veeqo allocations are kept in step in both directions

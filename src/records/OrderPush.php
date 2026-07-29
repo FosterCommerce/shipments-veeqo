@@ -15,6 +15,7 @@ use fostercommerce\shipments\veeqo\db\Table;
  * @property int $integrationId
  * @property string $veeqoOrderNumber
  * @property ?int $veeqoOrderId
+ * @property ?string $dateAllocationsSynced
  * @property string $dateCreated
  * @property string $dateUpdated
  * @property string $uid

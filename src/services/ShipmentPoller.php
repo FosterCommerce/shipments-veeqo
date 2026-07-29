@@ -27,7 +27,8 @@ use yii\base\Component;
 /**
  * Veeqo shipment poller.
  *
- * Veeqo is authoritative after push, so a pass overwrites the Craft split to match its allocations.
+ * Whichever side changed the split last wins: a pass mirrors Veeqo's allocations onto the Craft
+ * shipments unless Craft has edited them since {@see AllocationSync} last pushed.
  */
 class ShipmentPoller extends Component
 {
@@ -42,6 +43,11 @@ class ShipmentPoller extends Component
 		Status::InProgress->value,
 		Status::OnHold->value,
 	];
+
+	/**
+	 * Set while a pass writes Craft shipments; {@see Plugin} reads it to tell those writes from a CP edit.
+	 */
+	public bool $isMirroring = false;
 
 	/**
 	 * @throws IntegrationException
@@ -70,10 +76,16 @@ class ShipmentPoller extends Component
 				throw $veeqoApiException->toIntegrationException();
 			}
 
-			foreach ($veeqoOrders as $veeqoOrder) {
-				if (is_array($veeqoOrder)) {
-					$this->reconcileOrder($veeqoOrder, $provider, $integration);
+			$this->isMirroring = true;
+
+			try {
+				foreach ($veeqoOrders as $veeqoOrder) {
+					if (is_array($veeqoOrder)) {
+						$this->reconcileOrder($veeqoOrder, $provider, $integration);
+					}
 				}
+			} finally {
+				$this->isMirroring = false;
 			}
 		}
 	}
@@ -156,6 +168,7 @@ class ShipmentPoller extends Component
 		}
 
 		$lineItemIndex = $this->buildLineItemIndex($order);
+		$craftSplitIsNewer = $this->craftSplitIsNewer($order->id, $integrationId);
 
 		$seenAllocationIds = [];
 		foreach ($allocations as $allocation) {
@@ -165,6 +178,17 @@ class ShipmentPoller extends Component
 
 			$allocationId = $this->intField($allocation, 'id');
 			if ($allocationId === 0) {
+				continue;
+			}
+
+			// Tracking still applies to a shipment Craft has restructured; only its line items are
+			// left for the queued push to send.
+			if ($craftSplitIsNewer) {
+				$shipment = $shipmentByAllocationId[$allocationId] ?? null;
+				if ($shipment instanceof Shipment) {
+					$this->applyAllocationTracking($shipment, $allocation, $veeqoStatus, $integration);
+				}
+
 				continue;
 			}
 
@@ -182,7 +206,42 @@ class ShipmentPoller extends Component
 			}
 		}
 
-		$this->deleteOrphanedShipments($shipmentByAllocationId, $seenAllocationIds, $integrationId);
+		if (! $craftSplitIsNewer) {
+			$this->deleteOrphanedShipments($shipmentByAllocationId, $seenAllocationIds, $integrationId);
+		}
+	}
+
+	/**
+	 * Whether Craft's shipments have been edited since the last successful allocation push, meaning
+	 * Veeqo's allocations are the stale side and a queued push is about to correct them.
+	 */
+	private function craftSplitIsNewer(int $orderId, int $integrationId): bool
+	{
+		$dateAllocationsSynced = (new Query())
+			->select(['dateAllocationsSynced'])
+			->from(Table::ORDER_PUSHES)
+			->where([
+				'orderId' => $orderId,
+				'integrationId' => $integrationId,
+			])
+			->scalar();
+
+		if (! is_string($dateAllocationsSynced)) {
+			return false;
+		}
+
+		return (new Query())
+			->from([
+				'lineItems' => ShipmentsTable::SHIPMENT_LINE_ITEMS,
+			])
+			->innerJoin([
+				'shipments' => ShipmentsTable::SHIPMENTS,
+			], '[[shipments.id]] = [[lineItems.shipmentId]]')
+			->where([
+				'shipments.orderId' => $orderId,
+			])
+			->andWhere(['>', 'lineItems.dateUpdated', $dateAllocationsSynced])
+			->exists();
 	}
 
 	private function cancelOpenShipments(Order $order, Integration $integration): void

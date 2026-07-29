@@ -11,7 +11,9 @@ use craft\commerce\elements\Variant;
 use craft\commerce\models\LineItem;
 use craft\commerce\records\Transaction as TransactionRecord;
 use craft\elements\Address;
+use craft\helpers\Db;
 use craft\helpers\Json;
+use DateTime;
 use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
@@ -82,6 +84,44 @@ class OrderSync extends Component
 	}
 
 	/**
+	 * Settles a claim whose push never reported a Veeqo order id, adopting the order when Veeqo has
+	 * it and releasing the claim when it does not.
+	 *
+	 * @throws IntegrationException
+	 */
+	public function settleUnfinishedPush(Order $order, VeeqoProvider $provider): void
+	{
+		$integration = $provider->getSourceIntegration();
+		if (! $integration instanceof Integration) {
+			return;
+		}
+
+		$orderPush = OrderPush::findOne([
+			'orderId' => $order->id,
+			'integrationId' => $integration->id,
+			'veeqoOrderId' => null,
+		]);
+
+		if (! $orderPush instanceof OrderPush) {
+			return;
+		}
+
+		try {
+			$veeqoOrderId = $provider->getClient()->getOrderIdByNumber($orderPush->veeqoOrderNumber);
+		} catch (VeeqoApiException $veeqoApiException) {
+			throw $veeqoApiException->toIntegrationException();
+		}
+
+		if ($veeqoOrderId === null) {
+			$orderPush->delete();
+			return;
+		}
+
+		$orderPush->veeqoOrderId = $veeqoOrderId;
+		$orderPush->save(false);
+	}
+
+	/**
 	 * @throws IntegrationException
 	 * @throws PermanentIntegrationException
 	 * @throws Throwable
@@ -136,8 +176,8 @@ class OrderSync extends Component
 			]);
 		} catch (VeeqoApiException $veeqoApiException) {
 			// A status code means Veeqo answered and created nothing, so dropping the claim lets a retry
-			// push. A transport error (status 0) may still have landed, and re-pushing would duplicate the
-			// order, so that claim stands and the order waits for someone to clear the row.
+			// push. A transport error (status 0) may still have landed, so that claim stands until
+			// {@see settleUnfinishedPush} asks Veeqo which it was.
 			if ($veeqoApiException->getStatusCode() !== 0) {
 				$this->releaseClaim($orderId, $integrationId);
 			}
@@ -150,8 +190,11 @@ class OrderSync extends Component
 			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noOrderId'));
 		}
 
+		// Stamped here as well as in AllocationSync so a first Craft-side split counts as newer than
+		// the push; an unstamped row would let a poll mirror Veeqo back over it.
 		OrderPush::updateAll([
 			'veeqoOrderId' => $veeqoOrderId,
+			'dateAllocationsSynced' => Db::prepareDateForDb(new DateTime()),
 		], [
 			'orderId' => $orderId,
 			'integrationId' => $integrationId,
@@ -260,9 +303,9 @@ class OrderSync extends Component
 	}
 
 	/**
-	 * Create a one-off Veeqo sellable for a custom (non-purchasable) line item and return its id.
-	 * Custom items have no purchasable to cache against and belong to a single order, so the
-	 * sellable is created fresh per push.
+	 * Veeqo sellable id for a custom (non-purchasable) line item, created on demand.
+	 *
+	 * Custom items have no purchasable to map against, so the sellable is matched by SKU instead.
 	 *
 	 * @throws PermanentIntegrationException
 	 */
