@@ -6,6 +6,7 @@ namespace fostercommerce\shipments\veeqo\providers;
 
 use Craft;
 use craft\commerce\elements\Order;
+use craft\helpers\App;
 use craft\web\View;
 use fostercommerce\shipments\base\Provider;
 use fostercommerce\shipments\elements\Shipment;
@@ -22,7 +23,11 @@ class VeeqoProvider extends Provider
 {
 	public ?string $apiKey = null;
 
-	public ?int $channelId = null;
+	/**
+	 * Channel id or `$ENV_VAR` reference. Read through {@see getResolvedChannelId}, never directly:
+	 * the channel differs per environment while project config is shared across all of them.
+	 */
+	public ?string $channelId = null;
 
 	public bool $notifyCustomer = false;
 
@@ -79,6 +84,16 @@ class VeeqoProvider extends Provider
 		Plugin::instance()->getShipmentPoller()->poll($this);
 	}
 
+	/**
+	 * The channel id with any `$ENV_VAR` reference resolved, or null when unset or unresolvable.
+	 */
+	public function getResolvedChannelId(): ?int
+	{
+		$channelId = App::parseEnv($this->channelId);
+
+		return is_numeric($channelId) ? (int) $channelId : null;
+	}
+
 	public function getClient(): VeeqoApi
 	{
 		if (! $this->client instanceof VeeqoApi) {
@@ -113,8 +128,7 @@ class VeeqoProvider extends Provider
 	protected function defineRules(): array
 	{
 		return array_merge(parent::defineRules(), [
-			[['apiKey', 'orderIdPrefix'], 'string'],
-			[['channelId'], 'integer'],
+			[['apiKey', 'orderIdPrefix', 'channelId'], 'string'],
 			[['notifyCustomer'], 'boolean'],
 		]);
 	}

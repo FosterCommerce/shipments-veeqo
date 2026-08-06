@@ -60,7 +60,7 @@ Veeqo is a provider on the Shipments plugin, configured per integration.
 **Shipments -> Settings -> Integrations -> New.** Choose **Veeqo** as the provider, then fill in:
 
 - **API key**: the key from Veeqo. Supports environment variables (recommended).
-- **Channel id**: the Veeqo sales-channel id pushed orders belong to. Allocation follows this channel's default warehouse.
+- **Channel id**: the Veeqo sales-channel id pushed orders belong to. Allocation follows this channel's default warehouse. Supports environment variables (recommended), since project config is shared across environments but the channel is not.
 - **Order reference prefix**: optional prefix applied to the reference sent to Veeqo.
 - **Notify customer from Veeqo**: whether Veeqo emails the customer when the order ships. Default: off.
 

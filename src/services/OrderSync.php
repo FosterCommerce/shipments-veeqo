@@ -128,7 +128,8 @@ class OrderSync extends Component
 	 */
 	private function doPushOrder(Order $order, VeeqoProvider $provider): void
 	{
-		if ($provider->channelId === null) {
+		$channelId = $provider->getResolvedChannelId();
+		if ($channelId === null) {
 			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noChannelId'));
 		}
 
@@ -161,7 +162,7 @@ class OrderSync extends Component
 		try {
 			$response = $client->post('/orders', [
 				'order' => [
-					'channel_id' => $provider->channelId,
+					'channel_id' => $channelId,
 					'customer_id' => $customerId,
 					'number' => $number,
 					'send_notification_email' => $provider->notifyCustomer,

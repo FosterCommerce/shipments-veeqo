@@ -9,11 +9,13 @@
 	suggestEnvVars: true,
 }) }}
 
-{{ forms.textField({
+{{ forms.autosuggestField({
 	label: 'provider.channelIdLabel'|t('shipments-veeqo'),
 	instructions: 'provider.channelIdInstructions'|t('shipments-veeqo'),
 	name: 'settings[channelId]',
 	value: provider.channelId,
+	class: 'ltr',
+	suggestEnvVars: true,
 }) }}
 
 {{ forms.textField({

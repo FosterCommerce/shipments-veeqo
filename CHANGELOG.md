@@ -5,6 +5,7 @@
 ### Added
 
 - Veeqo provider for the Shipments plugin, with order push, allocation mirroring, product sync, and stock pull.
+- The provider's channel id now supports environment variables, so each environment can push to its own Veeqo channel from shared project config.
 
 ### Fixed
 
