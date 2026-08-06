@@ -300,11 +300,24 @@ class ProductSync extends Component
 	{
 		$currencyCode = (string) $variant->getStore()->getCurrency()?->getCode();
 
+		$productTitle = (string) $variant->getProduct()?->title;
+		$variantTitle = (string) $variant->title;
+
 		$attributes = [
 			'sku_code' => (string) $variant->sku,
-			'title' => (string) $variant->title,
+			// Veeqo names a sellable "<product title> <sellable title>", so a variant carrying its
+			// product's title reads twice. Blank must be explicit: omitting the key leaves the
+			// doubled title in place on an update.
+			'title' => $variantTitle === $productTitle ? '' : $variantTitle,
 			'price' => VeeqoPrice::decimal((float) $variant->price, $currencyCode),
 		];
+
+		// Veeqo discards a sellable in `sellables_attributes` unless it carries the id; matching on
+		// sku_code alone silently drops every field on it.
+		$mapping = $variant->id === null ? null : Plugin::instance()->getSellableMappings()->findByPurchasableId($variant->id);
+		if ($mapping instanceof SellableMapping) {
+			$attributes['id'] = $mapping->veeqoSellableId;
+		}
 
 		$weightGrams = $this->toGrams((float) $variant->weight);
 		if ($weightGrams > 0) {
