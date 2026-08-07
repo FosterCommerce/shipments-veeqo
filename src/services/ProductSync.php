@@ -304,7 +304,7 @@ class ProductSync extends Component
 		$variantTitle = (string) $variant->title;
 
 		$attributes = [
-			'sku_code' => (string) $variant->sku,
+			'sku_code' => trim((string) $variant->sku),
 			// Veeqo names a sellable "<product title> <sellable title>", so a variant carrying its
 			// product's title reads twice. Blank must be explicit: omitting the key leaves the
 			// doubled title in place on an update.
@@ -363,7 +363,7 @@ class ProductSync extends Component
 		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		foreach ($product->getVariants() as $variant) {
-			$sku = (string) $variant->sku;
+			$sku = trim((string) $variant->sku);
 			if ($sku === '') {
 				continue;
 			}
