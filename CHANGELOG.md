@@ -23,6 +23,8 @@
 - Fixed a bug where a cancellation note posted to Veeqo named the wrong reason for an order taken out of fulfillment.
 - Fixed an issue where an order that stopped requiring shipping did not post a cancellation note to Veeqo.
 - Fixed an issue where push failures shown on a shipment were not translatable.
+- Fixed a bug where a variant whose SKU carried leading or trailing spaces never linked to its Veeqo sellable, blocking every order containing it.
+- Fixed a bug where a variant added to a product already in Veeqo blocked its whole order from reaching Veeqo.
 
 ### Removed
 

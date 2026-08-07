@@ -294,13 +294,22 @@ class OrderSync extends Component
 		Plugin::instance()->getProductSync()->syncProduct($product, $provider);
 
 		$mapping = $sellableMappings->findByPurchasableId($purchasableId);
-		if (! $mapping instanceof SellableMapping) {
+		if ($mapping instanceof SellableMapping) {
+			return $mapping->veeqoSellableId;
+		}
+
+		// Veeqo drops sellables without an id from a product update, so a variant added after its
+		// product synced is unreachable there and only a product of its own can carry it.
+		$sellable = Plugin::instance()->getProductSync()->syncLineItemAsOwnProduct($lineItem, $provider);
+		if ($sellable === null) {
 			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.variantNotSynced', [
 				'description' => $lineItem->getDescription(),
 			]));
 		}
 
-		return $mapping->veeqoSellableId;
+		$sellableMappings->upsert($purchasableId, $sellable['sku'], $sellable['sellableId'], $sellable['productId']);
+
+		return $sellable['sellableId'];
 	}
 
 	/**
@@ -312,14 +321,14 @@ class OrderSync extends Component
 	 */
 	private function resolveCustomSellableId(LineItem $lineItem, VeeqoProvider $provider): int
 	{
-		$sellableId = Plugin::instance()->getProductSync()->syncCustomLineItem($lineItem, $provider);
-		if ($sellableId === 0) {
+		$sellable = Plugin::instance()->getProductSync()->syncLineItemAsOwnProduct($lineItem, $provider);
+		if ($sellable === null) {
 			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.customItemFailed', [
 				'description' => $lineItem->getDescription(),
 			]));
 		}
 
-		return $sellableId;
+		return $sellable['sellableId'];
 	}
 
 	/**

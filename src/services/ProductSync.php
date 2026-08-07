@@ -143,14 +143,15 @@ class ProductSync extends Component
 	}
 
 	/**
-	 * Create a Veeqo sellable for a custom (non-purchasable) line item and return its sellable id,
-	 * or 0 when the create response carries no matching sellable. Keys on the line item's own SKU,
+	 * Create a standalone Veeqo product for one line item and return the sellable it carries, or
+	 * null when the create response holds no matching sellable. Keys on the line item's own SKU,
 	 * falling back to a synthetic id so the sellable is stable per line item.
 	 *
+	 * @return array{sellableId: int, productId: int, sku: string}|null
 	 * @throws PermanentIntegrationException
 	 * @throws VeeqoApiException
 	 */
-	public function syncCustomLineItem(LineItem $lineItem, VeeqoProvider $provider): int
+	public function syncLineItemAsOwnProduct(LineItem $lineItem, VeeqoProvider $provider): ?array
 	{
 		$sku = trim($lineItem->getSku());
 		if ($sku === '') {
@@ -161,7 +162,10 @@ class ProductSync extends Component
 		// add another product for it.
 		$existing = $this->findSellableBySku($sku, $provider);
 		if ($existing !== null) {
-			return $existing['sellableId'];
+			return [
+				...$existing,
+				'sku' => $sku,
+			];
 		}
 
 		$currencyCode = (string) $lineItem->getOrder()?->getStore()->getCurrency()?->getCode();
@@ -177,7 +181,17 @@ class ProductSync extends Component
 			],
 		]);
 
-		return $this->buildSellableIdIndexBySku($response)[$sku] ?? 0;
+		$sellableId = $this->buildSellableIdIndexBySku($response)[$sku] ?? 0;
+		$productId = $this->extractVeeqoProductId($response);
+		if ($sellableId === 0 || $productId === 0) {
+			return null;
+		}
+
+		return [
+			'sellableId' => $sellableId,
+			'productId' => $productId,
+			'sku' => $sku,
+		];
 	}
 
 	/**
