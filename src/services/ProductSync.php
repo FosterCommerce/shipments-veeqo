@@ -57,21 +57,26 @@ class ProductSync extends Component
 			$existingMapping = $this->findExistingMapping($product);
 		}
 
-		$payload = $this->buildPayload($product);
-		$productPayloadEvent = new ProductPayloadEvent([
-			'product' => $product,
-			'payload' => $payload,
-		]);
-		$this->trigger(self::EVENT_BEFORE_SEND_PAYLOAD, $productPayloadEvent);
-		$payload = $productPayloadEvent->payload;
-
 		if (! $existingMapping instanceof SellableMapping) {
-			$response = $client->post('/products', $payload);
+			$response = $client->post('/products', $this->buildEventPayload($product));
 			$this->persistMappingsFromResponse($product, $response);
 			return;
 		}
 
-		$response = $client->put('/products/' . $existingMapping->veeqoProductId, $payload);
+		try {
+			$response = $client->put('/products/' . $existingMapping->veeqoProductId, $this->buildEventPayload($product));
+		} catch (VeeqoApiException $veeqoApiException) {
+			if ($veeqoApiException->getStatusCode() !== 404) {
+				throw $veeqoApiException;
+			}
+
+			$deletedMappings = Plugin::instance()->getSellableMappings()->deleteByVeeqoProductId($existingMapping->veeqoProductId);
+			Craft::warning("Veeqo no longer has product {$existingMapping->veeqoProductId}; dropped {$deletedMappings} sellable mapping(s) and created it again.", Plugin::HANDLE);
+
+			// The payload built above carries sellable ids from the product Veeqo just reported gone.
+			$response = $client->post('/products', $this->buildEventPayload($product));
+		}
+
 		$this->persistMappingsFromResponse($product, $response);
 	}
 
@@ -271,6 +276,20 @@ class ProductSync extends Component
 		}
 
 		return null;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function buildEventPayload(Product $product): array
+	{
+		$productPayloadEvent = new ProductPayloadEvent([
+			'product' => $product,
+			'payload' => $this->buildPayload($product),
+		]);
+		$this->trigger(self::EVENT_BEFORE_SEND_PAYLOAD, $productPayloadEvent);
+
+		return $productPayloadEvent->payload;
 	}
 
 	/**

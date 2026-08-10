@@ -104,6 +104,16 @@ class SellableMappings extends Component
 		return $mapping;
 	}
 
+	/**
+	 * @return int the number of rows deleted
+	 */
+	public function deleteByVeeqoProductId(int $veeqoProductId): int
+	{
+		return SellableMapping::deleteAll([
+			'veeqoProductId' => $veeqoProductId,
+		]);
+	}
+
 	public function deleteByPurchasableId(int $purchasableId): void
 	{
 		$mapping = $this->findByPurchasableId($purchasableId);

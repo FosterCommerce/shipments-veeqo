@@ -143,7 +143,12 @@ class OrderSync extends Component
 		$client = $provider->getClient();
 		$number = VeeqoReference::orderNumber($provider->orderIdPrefix, (string) $order->reference);
 
-		$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
+		try {
+			$lineItemAttributes = $this->buildLineItemAttributes($order, $provider);
+		} catch (VeeqoApiException $veeqoApiException) {
+			throw $veeqoApiException->toIntegrationException();
+		}
+
 		if ($lineItemAttributes === []) {
 			throw new PermanentIntegrationException(Craft::t(Plugin::HANDLE, 'error.push.noLineItems'));
 		}
@@ -246,6 +251,7 @@ class OrderSync extends Component
 	 *
 	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: string}>
 	 * @throws PermanentIntegrationException
+	 * @throws VeeqoApiException
 	 */
 	private function buildLineItemAttributes(Order $order, VeeqoProvider $provider): array
 	{
@@ -272,6 +278,7 @@ class OrderSync extends Component
 	 * when no mapping exists yet.
 	 *
 	 * @throws PermanentIntegrationException when the variant cannot be synced (e.g. no SKU)
+	 * @throws VeeqoApiException
 	 */
 	private function resolvePurchasableSellableId(LineItem $lineItem, VeeqoProvider $provider): int
 	{
@@ -318,6 +325,7 @@ class OrderSync extends Component
 	 * Custom items have no purchasable to map against, so the sellable is matched by SKU instead.
 	 *
 	 * @throws PermanentIntegrationException
+	 * @throws VeeqoApiException
 	 */
 	private function resolveCustomSellableId(LineItem $lineItem, VeeqoProvider $provider): int
 	{
