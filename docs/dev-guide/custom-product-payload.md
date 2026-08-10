@@ -13,6 +13,8 @@ How to change the product and sellable data sent to Veeqo before it leaves Craft
 
 The payload holds `title` and `sellables_attributes` (one entry per SKU-bearing variant), plus `images_attributes` when the **Product images field** setting is set and the product has an image. Whatever `payload` contains when the listener returns is what gets POSTed or PUT to Veeqo.
 
+A sellable entry carries an `id` only when that variant is already mapped to the Veeqo product being updated. Adding an `id` from any other Veeqo product makes Veeqo reject the whole request with a 404.
+
 ## Minimal example
 
 ```php

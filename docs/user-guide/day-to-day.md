@@ -53,7 +53,7 @@ You can turn this off with **Let Veeqo adjust Commerce inventory** under **Setti
 
 ## When a push fails
 
-A failed push leaves its reason on the shipment, under the **Details** tab. The common ones and what to do:
+A failed push leaves its reason on the shipment, in the sidebar under **Integrations**, below the push button. The common ones and what to do:
 
 | What it says | What to do |
 |---|---|

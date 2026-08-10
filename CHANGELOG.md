@@ -25,6 +25,8 @@
 - Fixed an issue where push failures shown on a shipment were not translatable.
 - Fixed a bug where a variant whose SKU carried leading or trailing spaces never linked to its Veeqo sellable, blocking every order containing it.
 - Fixed a bug where a variant added to a product already in Veeqo blocked its whole order from reaching Veeqo.
+- Fixed an error that could occur when pushing an order containing a product whose variants were linked to more than one Veeqo product.
+- Fixed an issue where a Veeqo error raised while syncing an order's products was missing from the shipment's last push attempt.
 
 ### Removed
 

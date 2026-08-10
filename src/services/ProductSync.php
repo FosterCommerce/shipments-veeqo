@@ -58,25 +58,13 @@ class ProductSync extends Component
 		}
 
 		if (! $existingMapping instanceof SellableMapping) {
-			$response = $client->post('/products', $this->buildEventPayload($product));
+			$response = $client->post('/products', $this->buildEventPayload($product, null));
 			$this->persistMappingsFromResponse($product, $response);
 			return;
 		}
 
-		try {
-			$response = $client->put('/products/' . $existingMapping->veeqoProductId, $this->buildEventPayload($product));
-		} catch (VeeqoApiException $veeqoApiException) {
-			if ($veeqoApiException->getStatusCode() !== 404) {
-				throw $veeqoApiException;
-			}
-
-			$deletedMappings = Plugin::instance()->getSellableMappings()->deleteByVeeqoProductId($existingMapping->veeqoProductId);
-			Craft::warning("Veeqo no longer has product {$existingMapping->veeqoProductId}; dropped {$deletedMappings} sellable mapping(s) and created it again.", Plugin::HANDLE);
-
-			// The payload built above carries sellable ids from the product Veeqo just reported gone.
-			$response = $client->post('/products', $this->buildEventPayload($product));
-		}
-
+		$veeqoProductId = $existingMapping->veeqoProductId;
+		$response = $client->put('/products/' . $veeqoProductId, $this->buildEventPayload($product, $veeqoProductId));
 		$this->persistMappingsFromResponse($product, $response);
 	}
 
@@ -281,11 +269,11 @@ class ProductSync extends Component
 	/**
 	 * @return array<string, mixed>
 	 */
-	private function buildEventPayload(Product $product): array
+	private function buildEventPayload(Product $product, ?int $veeqoProductId): array
 	{
 		$productPayloadEvent = new ProductPayloadEvent([
 			'product' => $product,
-			'payload' => $this->buildPayload($product),
+			'payload' => $this->buildPayload($product, $veeqoProductId),
 		]);
 		$this->trigger(self::EVENT_BEFORE_SEND_PAYLOAD, $productPayloadEvent);
 
@@ -295,7 +283,7 @@ class ProductSync extends Component
 	/**
 	 * @return array<string, mixed>
 	 */
-	private function buildPayload(Product $product): array
+	private function buildPayload(Product $product, ?int $veeqoProductId): array
 	{
 		$sellablePayloads = [];
 		foreach ($product->getVariants() as $variant) {
@@ -303,7 +291,7 @@ class ProductSync extends Component
 				continue;
 			}
 
-			$sellablePayloads[] = $this->buildSellablePayload($variant);
+			$sellablePayloads[] = $this->buildSellablePayload($variant, $veeqoProductId);
 		}
 
 		$payload = [
@@ -329,7 +317,7 @@ class ProductSync extends Component
 	 *
 	 * @return array<string, mixed>
 	 */
-	private function buildSellablePayload(Variant $variant): array
+	private function buildSellablePayload(Variant $variant, ?int $veeqoProductId): array
 	{
 		$currencyCode = (string) $variant->getStore()->getCurrency()?->getCode();
 
@@ -346,9 +334,10 @@ class ProductSync extends Component
 		];
 
 		// Veeqo discards a sellable in `sellables_attributes` unless it carries the id; matching on
-		// sku_code alone silently drops every field on it.
+		// sku_code alone silently drops every field on it. An id belonging to a different Veeqo
+		// product is an unresolvable foreign key, which Veeqo answers with a 404 on the request.
 		$mapping = $variant->id === null ? null : Plugin::instance()->getSellableMappings()->findByPurchasableId($variant->id);
-		if ($mapping instanceof SellableMapping) {
+		if ($mapping instanceof SellableMapping && $mapping->veeqoProductId === $veeqoProductId) {
 			$attributes['id'] = $mapping->veeqoSellableId;
 		}
 
