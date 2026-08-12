@@ -281,6 +281,7 @@ class ProductSync extends Component
 	}
 
 	/**
+	 * @param ?int $veeqoProductId the Veeqo product being updated, or null when creating one
 	 * @return array<string, mixed>
 	 */
 	private function buildPayload(Product $product, ?int $veeqoProductId): array
@@ -295,9 +296,16 @@ class ProductSync extends Component
 		}
 
 		$payload = [
-			'title' => (string) $product->title,
 			'sellables_attributes' => $sellablePayloads,
 		];
+
+		// A Veeqo product can hold sellables from several Craft products, so an update carrying this
+		// product's title or image applies it to all of them.
+		if ($veeqoProductId !== null) {
+			return $payload;
+		}
+
+		$payload['title'] = (string) $product->title;
 
 		$imageUrl = ProductImageFields::firstUrl($product, (string) Plugin::instance()->getSettings()->productImagesHandle);
 		if ($imageUrl !== null) {

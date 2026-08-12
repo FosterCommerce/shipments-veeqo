@@ -27,6 +27,7 @@
 - Fixed a bug where a variant added to a product already in Veeqo blocked its whole order from reaching Veeqo.
 - Fixed an error that could occur when pushing an order containing a product whose variants were linked to more than one Veeqo product.
 - Fixed an issue where a Veeqo error raised while syncing an order's products was missing from the shipment's last push attempt.
+- Fixed a bug where syncing a product overwrote the name and image of the Veeqo product holding it, so any other product sharing that Veeqo product showed the wrong name and image in Veeqo and in its shipping emails.
 
 ### Removed
 
