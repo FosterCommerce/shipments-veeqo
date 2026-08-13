@@ -24,6 +24,7 @@ return [
 	'footer.supportTitle' => 'Foster Commerce Support',
 
 	// Queue jobs
+	'queue.classifyingMappings' => 'Checking which Veeqo products this plugin created',
 	'queue.notifyCancellation' => 'Notifying Veeqo of a cancellation',
 	'queue.pushingAllocations' => 'Sending order {id} shipments to Veeqo',
 	'job.syncProduct' => 'Syncing product {id} to Veeqo',

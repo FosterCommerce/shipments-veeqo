@@ -20,6 +20,7 @@ class Install extends Migration
 			'sku' => $this->string()->notNull(),
 			'veeqoSellableId' => $this->integer()->notNull(),
 			'veeqoProductId' => $this->integer()->notNull(),
+			'adopted' => $this->boolean()->notNull()->defaultValue(false),
 			'lastSyncedAt' => $this->dateTime(),
 			'dateCreated' => $this->dateTime()->notNull(),
 			'dateUpdated' => $this->dateTime()->notNull(),

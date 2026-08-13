@@ -15,6 +15,7 @@ use fostercommerce\shipments\veeqo\db\Table;
  * @property string $sku
  * @property int $veeqoSellableId
  * @property int $veeqoProductId
+ * @property bool $adopted
  * @property ?string $lastSyncedAt
  * @property string $dateCreated
  * @property string $dateUpdated

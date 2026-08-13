@@ -4,6 +4,7 @@
 
 ### Added
 
+- Veeqo product names, images and item names are kept up to date for products this plugin created. Products it linked to, or that hold more than one Craft product, are left as Veeqo has them.
 - Veeqo provider for the Shipments plugin, with order push, allocation mirroring, product sync, and stock pull.
 - The provider's channel id now supports environment variables, so each environment can push to its own Veeqo channel from shared project config.
 
@@ -27,7 +28,13 @@
 - Fixed a bug where a variant added to a product already in Veeqo blocked its whole order from reaching Veeqo.
 - Fixed an error that could occur when pushing an order containing a product whose variants were linked to more than one Veeqo product.
 - Fixed an issue where a Veeqo error raised while syncing an order's products was missing from the shipment's last push attempt.
-- Fixed a bug where syncing a product overwrote the name and image of the Veeqo product holding it, so any other product sharing that Veeqo product showed the wrong name and image in Veeqo and in its shipping emails.
+- Fixed a bug where syncing a product overwrote the name and image of a Veeqo product it shares with other products, so those showed the wrong name and image in Veeqo and in its shipping emails. A Veeqo product holding one Craft product still has its name and image kept current.
+- Fixed a bug where syncing a product replaced each of its items' names in Veeqo with a size, leaving shipping emails with nothing identifying what was bought.
+- Fixed a bug where syncing a product overwrote its items' SKUs in Veeqo.
+- Fixed a bug where a variant added to a product already in Veeqo never reached Veeqo, so it was created as a separate product the first time it was ordered.
+- Fixed a bug where syncing a product added its variants to a Veeqo product shared with other products, growing a grouping it did not own.
+- Fixed an issue where a product moved to a different Veeqo product stopped syncing until its mapping was corrected by hand.
+- Fixed a bug where a Veeqo product created for a sales channel had its name, image and item names overwritten with the Craft product's.
 
 ### Removed
 

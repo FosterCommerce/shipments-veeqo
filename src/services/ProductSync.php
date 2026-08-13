@@ -49,6 +49,8 @@ class ProductSync extends Component
 	{
 		$client = $provider->getClient();
 
+		$this->forgetRenamedVariants($product);
+
 		$existingMapping = $this->findExistingMapping($product);
 		if (! $existingMapping instanceof SellableMapping) {
 			// Link to a product already in Veeqo (matched by SKU) so a first sync against a
@@ -63,9 +65,10 @@ class ProductSync extends Component
 			return;
 		}
 
-		$veeqoProductId = $existingMapping->veeqoProductId;
-		$response = $client->put('/products/' . $veeqoProductId, $this->buildEventPayload($product, $veeqoProductId));
-		$this->persistMappingsFromResponse($product, $response);
+		$response = $this->putProduct($product, $existingMapping->veeqoProductId, $provider);
+		if ($response !== null) {
+			$this->persistMappingsFromResponse($product, $response);
+		}
 	}
 
 	/**
@@ -124,7 +127,7 @@ class ProductSync extends Component
 				continue;
 			}
 
-			$sellableMappings->upsert($variant->id, $sku, $match['sellableId'], $match['productId']);
+			$sellableMappings->upsert($variant->id, $sku, $match['sellableId'], $match['productId'], true);
 			$linked[] = $sku;
 		}
 
@@ -140,7 +143,7 @@ class ProductSync extends Component
 	 * null when the create response holds no matching sellable. Keys on the line item's own SKU,
 	 * falling back to a synthetic id so the sellable is stable per line item.
 	 *
-	 * @return array{sellableId: int, productId: int, sku: string}|null
+	 * @return array{sellableId: int, productId: int, sku: string, adopted: bool}|null
 	 * @throws PermanentIntegrationException
 	 * @throws VeeqoApiException
 	 */
@@ -158,6 +161,7 @@ class ProductSync extends Component
 			return [
 				...$existing,
 				'sku' => $sku,
+				'adopted' => true,
 			];
 		}
 
@@ -165,7 +169,7 @@ class ProductSync extends Component
 
 		$response = $provider->getClient()->post('/products', [
 			'title' => $lineItem->getDescription(),
-			'sellables_attributes' => [
+			'product_variants_attributes' => [
 				[
 					'sku_code' => $sku,
 					'title' => $lineItem->getDescription(),
@@ -184,7 +188,76 @@ class ProductSync extends Component
 			'sellableId' => $sellableId,
 			'productId' => $productId,
 			'sku' => $sku,
+			'adopted' => false,
 		];
+	}
+
+	/**
+	 * Updates the Veeqo product, re-reading the mappings and retrying once when it answers 404.
+	 *
+	 * Veeqo answers any id it cannot resolve with a 404, which is how a variant regrouped under a
+	 * different product presents.
+	 *
+	 * @return array<array-key, mixed>|null null when no variant maps anywhere after the refresh
+	 * @throws VeeqoApiException
+	 */
+	private function putProduct(Product $product, int $veeqoProductId, VeeqoProvider $provider): ?array
+	{
+		$client = $provider->getClient();
+
+		try {
+			return $client->put('/products/' . $veeqoProductId, $this->buildEventPayload($product, $veeqoProductId));
+		} catch (VeeqoApiException $veeqoApiException) {
+			if ($veeqoApiException->getStatusCode() !== 404) {
+				throw $veeqoApiException;
+			}
+		}
+
+		$this->refreshMappedProductIds($product, $provider);
+
+		$mapping = $this->findExistingMapping($product);
+		if (! $mapping instanceof SellableMapping) {
+			return null;
+		}
+
+		return $client->put('/products/' . $mapping->veeqoProductId, $this->buildEventPayload($product, $mapping->veeqoProductId));
+	}
+
+	/**
+	 * Records the Veeqo product each mapped sellable currently belongs to, dropping mappings for
+	 * sellables Veeqo has since deleted.
+	 */
+	private function refreshMappedProductIds(Product $product, VeeqoProvider $provider): void
+	{
+		$sellableMappings = Plugin::instance()->getSellableMappings();
+
+		foreach ($product->getVariants() as $variant) {
+			$mapping = $variant->id === null ? null : $sellableMappings->findByPurchasableId($variant->id);
+			if (! $mapping instanceof SellableMapping) {
+				continue;
+			}
+
+			try {
+				$sellable = $provider->getClient()->get('/sellables/' . $mapping->veeqoSellableId);
+			} catch (VeeqoApiException $veeqoApiException) {
+				Craft::warning("Veeqo sellable {$mapping->veeqoSellableId} could not be re-read: " . $veeqoApiException->getMessage(), Plugin::HANDLE);
+				continue;
+			}
+
+			if (($sellable['deleted_at'] ?? null) !== null) {
+				$sellableMappings->deleteByPurchasableId((int) $variant->id);
+				continue;
+			}
+
+			$sellableProduct = $sellable['product'] ?? null;
+			$currentProductId = is_array($sellableProduct) && isset($sellableProduct['id']) && is_numeric($sellableProduct['id'])
+				? (int) $sellableProduct['id']
+				: 0;
+
+			if ($currentProductId !== 0 && $currentProductId !== $mapping->veeqoProductId) {
+				$sellableMappings->upsert((int) $variant->id, $mapping->sku, $mapping->veeqoSellableId, $currentProductId);
+			}
+		}
 	}
 
 	/**
@@ -238,6 +311,33 @@ class ProductSync extends Component
 		return null;
 	}
 
+	/**
+	 * Drops mappings for variants whose SKU has changed, so each links to the sellable carrying its
+	 * current SKU, or is created, rather than renaming the sellable it used to point at.
+	 */
+	/**
+	 * Whether a Veeqo product is one this plugin created and still holds alone. Anything else was
+	 * built for another product or another system, so its name, image and contents stand.
+	 */
+	private function isVeeqoProductOurs(int $veeqoProductId): bool
+	{
+		$sellableMappings = Plugin::instance()->getSellableMappings();
+
+		return $sellableMappings->countCraftProductsForVeeqoProduct($veeqoProductId) <= 1
+			&& ! $sellableMappings->hasAdoptedForVeeqoProduct($veeqoProductId);
+	}
+
+	private function forgetRenamedVariants(Product $product): void
+	{
+		$sellableMappings = Plugin::instance()->getSellableMappings();
+
+		foreach ($product->getVariants() as $variant) {
+			if ($variant->id !== null) {
+				$sellableMappings->deleteIfSkuChanged($variant->id, trim((string) $variant->sku));
+			}
+		}
+	}
+
 	private function findExistingMapping(Product $product): ?SellableMapping
 	{
 		$sellableMappings = Plugin::instance()->getSellableMappings();
@@ -286,22 +386,21 @@ class ProductSync extends Component
 	 */
 	private function buildPayload(Product $product, ?int $veeqoProductId): array
 	{
-		$sellablePayloads = [];
-		foreach ($product->getVariants() as $variant) {
-			if (trim((string) $variant->sku) === '') {
-				continue;
-			}
+		$isOurs = $veeqoProductId === null || $this->isVeeqoProductOurs($veeqoProductId);
 
-			$sellablePayloads[] = $this->buildSellablePayload($variant, $veeqoProductId);
+		$variantPayloads = [];
+		foreach ($product->getVariants() as $variant) {
+			$variantPayload = $this->buildVariantPayload($variant, $veeqoProductId, $isOurs);
+			if ($variantPayload !== []) {
+				$variantPayloads[] = $variantPayload;
+			}
 		}
 
 		$payload = [
-			'sellables_attributes' => $sellablePayloads,
+			'product_variants_attributes' => $variantPayloads,
 		];
 
-		// A Veeqo product can hold sellables from several Craft products, so an update carrying this
-		// product's title or image applies it to all of them.
-		if ($veeqoProductId !== null) {
+		if (! $isOurs) {
 			return $payload;
 		}
 
@@ -321,32 +420,51 @@ class ProductSync extends Component
 	}
 
 	/**
-	 * Stock is not sent: Veeqo tracks it in per-warehouse `stock_entries`, not on the sellable.
+	 * Stock is not sent: Veeqo tracks it in per-warehouse `stock_entries`, not on the variant.
 	 *
-	 * @return array<string, mixed>
+	 * @return array<string, mixed> empty when the variant has no SKU, lives on a different Veeqo
+	 *   product, or would be created inside one shared with other Craft products
 	 */
-	private function buildSellablePayload(Variant $variant, ?int $veeqoProductId): array
+	private function buildVariantPayload(Variant $variant, ?int $veeqoProductId, bool $isOurs): array
 	{
+		$sku = trim((string) $variant->sku);
+		if ($sku === '') {
+			return [];
+		}
+
+		$mapping = $variant->id === null ? null : Plugin::instance()->getSellableMappings()->findByPurchasableId($variant->id);
+
+		// Sending it here would add a second copy alongside the one it already has elsewhere.
+		if ($mapping instanceof SellableMapping && $mapping->veeqoProductId !== $veeqoProductId) {
+			return [];
+		}
+
+		// Creating it here would add to a Veeqo product built for something other than this one.
+		if (! $isOurs && ! $mapping instanceof SellableMapping) {
+			return [];
+		}
+
 		$currencyCode = (string) $variant->getStore()->getCurrency()?->getCode();
 
-		$productTitle = (string) $variant->getProduct()?->title;
-		$variantTitle = (string) $variant->title;
-
 		$attributes = [
-			'sku_code' => trim((string) $variant->sku),
-			// Veeqo names a sellable "<product title> <sellable title>", so a variant carrying its
-			// product's title reads twice. Blank must be explicit: omitting the key leaves the
-			// doubled title in place on an update.
-			'title' => $variantTitle === $productTitle ? '' : $variantTitle,
 			'price' => VeeqoPrice::decimal((float) $variant->price, $currencyCode),
 		];
 
-		// Veeqo discards a sellable in `sellables_attributes` unless it carries the id; matching on
-		// sku_code alone silently drops every field on it. An id belonging to a different Veeqo
-		// product is an unresolvable foreign key, which Veeqo answers with a 404 on the request.
-		$mapping = $variant->id === null ? null : Plugin::instance()->getSellableMappings()->findByPurchasableId($variant->id);
-		if ($mapping instanceof SellableMapping && $mapping->veeqoProductId === $veeqoProductId) {
+		if ($mapping instanceof SellableMapping) {
 			$attributes['id'] = $mapping->veeqoSellableId;
+		} else {
+			$attributes['sku_code'] = $sku;
+		}
+
+		// On a Veeqo product this plugin did not create, the variant's name is the only text saying
+		// which Craft product the line is, so it is left as Veeqo has it.
+		if ($isOurs && ! ($mapping instanceof SellableMapping && $mapping->adopted)) {
+			$productTitle = (string) $variant->getProduct()?->title;
+			$variantTitle = (string) $variant->title;
+
+			// Veeqo names a variant "<product title> <variant title>", so one carrying its product's
+			// title reads twice.
+			$attributes['title'] = $variantTitle === $productTitle ? '' : $variantTitle;
 		}
 
 		$weightGrams = $this->toGrams((float) $variant->weight);

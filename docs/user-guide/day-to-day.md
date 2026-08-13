@@ -43,6 +43,22 @@ Deleting one shipment while others remain is a change to the split, not a cancel
 
 An order that was never pushed has nothing in Veeqo to write to, so no note is posted.
 
+## How products reach Veeqo
+
+Saving a product in Craft queues a sync. One Craft product becomes one Veeqo product, and each of its variants becomes a variant there. Veeqo shows an item as the product name followed by the variant name, so a product called Wool Scarf with a Large variant reads "Wool Scarf Large".
+
+When a variant's SKU already exists in Veeqo, the sync links to it rather than creating a duplicate. That keeps a single stock figure for a product you also sell elsewhere, and it means the Veeqo side is whatever was already there.
+
+Adding a variant in Craft later adds it to the same Veeqo product. Editing a product's name, image or a variant's name updates Veeqo on the next save.
+
+### Products the sync leaves alone
+
+Some Veeqo products were not built by this plugin. They hold items belonging to several different Craft products, or they are listed on a sales channel and carry the name that channel shows. Veeqo displays one name for everything inside such a product, so that name cannot be right for all of them.
+
+The sync leaves those alone. It will not rename them, change their image, or add anything to them. It keeps the price and weight of the items already in there up to date, and nothing else. Names on those items stay as Veeqo has them.
+
+The practical effect is that a product caught in a group keeps a Veeqo name that differs from its Craft name, and any sizes missing from the group stay missing. Sorting that out means regrouping in Veeqo, which is a decision about your Veeqo catalog rather than something the plugin can do.
+
 ## Stock
 
 Veeqo owns stock. When the stock job runs, it copies Veeqo's available quantity onto matching Commerce variants, overwriting whatever Craft had. Variants that do not track inventory are never touched.

@@ -314,7 +314,7 @@ class OrderSync extends Component
 			]));
 		}
 
-		$sellableMappings->upsert($purchasableId, $sellable['sku'], $sellable['sellableId'], $sellable['productId']);
+		$sellableMappings->upsert($purchasableId, $sellable['sku'], $sellable['sellableId'], $sellable['productId'], $sellable['adopted']);
 
 		return $sellable['sellableId'];
 	}
