@@ -7,6 +7,8 @@ namespace fostercommerce\shipments\veeqo\console\controllers;
 use Craft;
 use craft\commerce\elements\Product;
 use craft\console\Controller;
+use fostercommerce\shipments\Plugin as ShipmentsPlugin;
+use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\jobs\ClassifyAdoptedMappingsJob;
 use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
 use fostercommerce\shipments\veeqo\Plugin;
@@ -45,6 +47,84 @@ class ProductsController extends Controller
 		Craft::$app->getQueue()->push(new ClassifyAdoptedMappingsJob());
 
 		$this->stdout("Queued the mapping classification job.\n");
+		return ExitCode::OK;
+	}
+
+	/**
+	 * Deletes Veeqo products built from Craft product types the Shipments plugin now ignores, for a
+	 * store that synced them before the setting existed. Veeqo products holding an adopted sellable,
+	 * or variants from more than one Craft product, are left alone.
+	 */
+	public function actionPruneIgnored(): int
+	{
+		/** @var Plugin $plugin */
+		$plugin = Plugin::getInstance();
+		$provider = $plugin->getVeeqoProvider();
+		if ($provider === null) {
+			$this->stderr("No enabled Veeqo integration found.\n");
+			return ExitCode::CONFIG;
+		}
+
+		/** @var ShipmentsPlugin $shipments */
+		$shipments = ShipmentsPlugin::getInstance();
+		$ignoredProductTypes = $shipments->getSettings()->productTypesToIgnore;
+		if ($ignoredProductTypes === []) {
+			$this->stdout("No product types are ignored, so there is nothing to prune.\n");
+			return ExitCode::OK;
+		}
+
+		$sellableMappings = $plugin->getSellableMappings();
+
+		// Group the mappings by Veeqo product, since that is what gets deleted.
+		$purchasableIdsByVeeqoProduct = [];
+		foreach ($sellableMappings->findByProductTypes($ignoredProductTypes) as $mapping) {
+			$purchasableIdsByVeeqoProduct[$mapping['veeqoProductId']][] = $mapping['purchasableId'];
+		}
+
+		$prunable = [];
+		$skipped = [];
+		foreach ($purchasableIdsByVeeqoProduct as $veeqoProductId => $purchasableIds) {
+			if ($sellableMappings->hasAdoptedForVeeqoProduct($veeqoProductId)
+				|| $sellableMappings->countCraftProductsForVeeqoProduct($veeqoProductId) > 1) {
+				$skipped[] = $veeqoProductId;
+				continue;
+			}
+
+			$prunable[$veeqoProductId] = $purchasableIds;
+		}
+
+		if ($skipped !== []) {
+			$this->stdout(sprintf("Leaving %d Veeqo product(s) alone (adopted, or shared with another Craft product): %s\n", count($skipped), implode(', ', $skipped)));
+		}
+
+		if ($prunable === []) {
+			$this->stdout("Nothing to prune.\n");
+			return ExitCode::OK;
+		}
+
+		$this->stdout(sprintf("About to delete %d Veeqo product(s): %s\n", count($prunable), implode(', ', array_keys($prunable))));
+		if (! $this->confirm('Delete them in Veeqo and drop their mappings?')) {
+			return ExitCode::OK;
+		}
+
+		$client = $provider->getClient();
+		$deletedCount = 0;
+		foreach ($prunable as $veeqoProductId => $purchasableIds) {
+			try {
+				$client->delete('/products/' . $veeqoProductId);
+			} catch (VeeqoApiException $veeqoApiException) {
+				$this->stderr("Veeqo product {$veeqoProductId} could not be deleted: " . $veeqoApiException->getMessage() . "\n");
+				continue;
+			}
+
+			foreach ($purchasableIds as $purchasableId) {
+				$sellableMappings->deleteByPurchasableId($purchasableId);
+			}
+
+			++$deletedCount;
+		}
+
+		$this->stdout(sprintf("Deleted %d Veeqo product(s).\n", $deletedCount));
 		return ExitCode::OK;
 	}
 

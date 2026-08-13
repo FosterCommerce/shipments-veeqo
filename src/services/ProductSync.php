@@ -11,6 +11,7 @@ use craft\commerce\models\LineItem;
 use craft\commerce\Plugin as Commerce;
 use craft\helpers\StringHelper;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
+use fostercommerce\shipments\Plugin as ShipmentsPlugin;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\events\ProductPayloadEvent;
 use fostercommerce\shipments\veeqo\helpers\ProductImageFields;
@@ -47,6 +48,10 @@ class ProductSync extends Component
 	 */
 	public function syncProduct(Product $product, VeeqoProvider $provider): void
 	{
+		if ($this->isIgnoredProductType($product)) {
+			return;
+		}
+
 		$client = $provider->getClient();
 
 		$this->forgetRenamedVariants($product);
@@ -80,6 +85,14 @@ class ProductSync extends Component
 	 */
 	public function reconcile(Product $product, VeeqoProvider $provider): array
 	{
+		if ($this->isIgnoredProductType($product)) {
+			return [
+				'linked' => [],
+				'unmatched' => [],
+				'failed' => [],
+			];
+		}
+
 		$sellableMappings = Plugin::instance()->getSellableMappings();
 
 		$linked = [];
@@ -312,10 +325,6 @@ class ProductSync extends Component
 	}
 
 	/**
-	 * Drops mappings for variants whose SKU has changed, so each links to the sellable carrying its
-	 * current SKU, or is created, rather than renaming the sellable it used to point at.
-	 */
-	/**
 	 * Whether a Veeqo product is one this plugin created and still holds alone. Anything else was
 	 * built for another product or another system, so its name, image and contents stand.
 	 */
@@ -327,6 +336,23 @@ class ProductSync extends Component
 			&& ! $sellableMappings->hasAdoptedForVeeqoProduct($veeqoProductId);
 	}
 
+	/**
+	 * Product types the Shipments plugin skips never reach a shipment, so they have nothing to do in
+	 * a warehouse system.
+	 */
+	private function isIgnoredProductType(Product $product): bool
+	{
+		/** @var ShipmentsPlugin $shipments */
+		$shipments = ShipmentsPlugin::getInstance();
+		$ignoredProductTypes = $shipments->getSettings()->productTypesToIgnore;
+
+		return in_array($product->getType()->handle, $ignoredProductTypes, true);
+	}
+
+	/**
+	 * Drops mappings for variants whose SKU has changed, so each links to the sellable carrying its
+	 * current SKU, or is created, rather than renaming the sellable it used to point at.
+	 */
 	private function forgetRenamedVariants(Product $product): void
 	{
 		$sellableMappings = Plugin::instance()->getSellableMappings();

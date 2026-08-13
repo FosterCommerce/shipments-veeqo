@@ -8,6 +8,11 @@
 - Veeqo provider for the Shipments plugin, with order push, allocation mirroring, product sync, and stock pull.
 - The provider's channel id now supports environment variables, so each environment can push to its own Veeqo channel from shared project config.
 - `shipments-veeqo/products/classify` re-checks which Veeqo products were built for a sales channel, for a site whose catalog changed since the plugin was installed.
+- `shipments-veeqo/products/prune-ignored` deletes Veeqo products built from Craft product types the Shipments plugin now ignores, after confirming what it will remove.
+
+### Changed
+
+- Saving or bulk-syncing a product whose type is in the Shipments plugin's `productTypesToIgnore` setting no longer sends it to Veeqo. An order containing one still sends every line it holds.
 
 ### Fixed
 

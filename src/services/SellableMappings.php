@@ -87,9 +87,6 @@ class SellableMappings extends Component
 	}
 
 	/**
-	 * @throws Exception if the record fails to save
-	 */
-	/**
 	 * @param ?bool $adopted true when linking to a sellable Veeqo already had, or null to leave an
 	 *   existing row as it is and treat a new one as created by this plugin
 	 * @throws Exception if the record fails to save
@@ -162,6 +159,51 @@ class SellableMappings extends Component
 				'mappings.veeqoProductId' => $veeqoProductId,
 			])
 			->count('DISTINCT [[variants.primaryOwnerId]]');
+	}
+
+	/**
+	 * Mappings whose Craft product is of one of the given product types.
+	 *
+	 * @param list<string> $productTypeHandles
+	 * @return list<array{purchasableId: int, sku: string, veeqoProductId: int, adopted: bool}>
+	 */
+	public function findByProductTypes(array $productTypeHandles): array
+	{
+		if ($productTypeHandles === []) {
+			return [];
+		}
+
+		/** @var list<array{purchasableId: int|string, sku: string, veeqoProductId: int|string, adopted: bool|int|string}> $rows */
+		$rows = (new Query())
+			->select([
+				'mappings.purchasableId',
+				'mappings.sku',
+				'mappings.veeqoProductId',
+				'mappings.adopted',
+			])
+			->from([
+				'mappings' => Table::SELLABLE_MAPPINGS,
+			])
+			->innerJoin([
+				'variants' => CommerceTable::VARIANTS,
+			], '[[variants.id]] = [[mappings.purchasableId]]')
+			->innerJoin([
+				'products' => CommerceTable::PRODUCTS,
+			], '[[products.id]] = [[variants.primaryOwnerId]]')
+			->innerJoin([
+				'productTypes' => CommerceTable::PRODUCTTYPES,
+			], '[[productTypes.id]] = [[products.typeId]]')
+			->where([
+				'productTypes.handle' => $productTypeHandles,
+			])
+			->all();
+
+		return array_map(static fn (array $row): array => [
+			'purchasableId' => (int) $row['purchasableId'],
+			'sku' => $row['sku'],
+			'veeqoProductId' => (int) $row['veeqoProductId'],
+			'adopted' => (bool) $row['adopted'],
+		], $rows);
 	}
 
 	/**

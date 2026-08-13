@@ -89,6 +89,14 @@ Queues every Commerce product for a Veeqo sellable sync. Safe to re-run.
 Links Craft variants to products already in Veeqo by exact SKU match, without creating anything. Run this before the first sync against a Veeqo account that already has products. See [Connecting to an existing Veeqo catalog](#connecting-to-an-existing-veeqo-catalog).
 
 ```sh
+./craft shipments-veeqo/products/prune-ignored
+```
+
+Deletes Veeqo products built from Craft product types the Shipments plugin now ignores, for a store that synced them before setting **Product types to ignore**. Lists what it will delete and asks before doing it. Veeqo products holding a sellable this plugin linked to, or variants from more than one Craft product, are left alone.
+
+Pushing an order that contains one of these products creates a product for it again, so re-run the command when that matters.
+
+```sh
 ./craft shipments-veeqo/products/classify
 ```
 

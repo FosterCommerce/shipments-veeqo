@@ -51,6 +51,8 @@ When a variant's SKU already exists in Veeqo, the sync links to it rather than c
 
 Adding a variant in Craft later adds it to the same Veeqo product. Editing a product's name, image or a variant's name updates Veeqo on the next save.
 
+Saving a product of a type listed in the Shipments plugin's **Product types to ignore** syncs nothing, and the bulk sync skips it. An order containing one still sends every line it holds, so that product appears in Veeqo as a product of its own when the order is pushed.
+
 ### Products the sync leaves alone
 
 Some Veeqo products were not built by this plugin. They hold items belonging to several different Craft products, or they are listed on a sales channel and carry the name that channel shows. Veeqo displays one name for everything inside such a product, so that name cannot be right for all of them.
