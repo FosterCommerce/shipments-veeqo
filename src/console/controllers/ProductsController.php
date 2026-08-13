@@ -7,6 +7,7 @@ namespace fostercommerce\shipments\veeqo\console\controllers;
 use Craft;
 use craft\commerce\elements\Product;
 use craft\console\Controller;
+use fostercommerce\shipments\veeqo\jobs\ClassifyAdoptedMappingsJob;
 use fostercommerce\shipments\veeqo\jobs\SyncProductJob;
 use fostercommerce\shipments\veeqo\Plugin;
 use yii\console\ExitCode;
@@ -32,6 +33,18 @@ class ProductsController extends Controller
 		}
 
 		$this->stdout(sprintf("Queued %d product(s) for Veeqo sync.\n", count($productIds)));
+		return ExitCode::OK;
+	}
+
+	/**
+	 * Re-checks which mapped Veeqo products were built for a sales channel, so the sync knows which
+	 * ones it may rename. Safe to re-run; a mapping already marked as ours stays that way.
+	 */
+	public function actionClassify(): int
+	{
+		Craft::$app->getQueue()->push(new ClassifyAdoptedMappingsJob());
+
+		$this->stdout("Queued the mapping classification job.\n");
 		return ExitCode::OK;
 	}
 

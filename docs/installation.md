@@ -89,6 +89,12 @@ Queues every Commerce product for a Veeqo sellable sync. Safe to re-run.
 Links Craft variants to products already in Veeqo by exact SKU match, without creating anything. Run this before the first sync against a Veeqo account that already has products. See [Connecting to an existing Veeqo catalog](#connecting-to-an-existing-veeqo-catalog).
 
 ```sh
+./craft shipments-veeqo/products/classify
+```
+
+Re-checks which Veeqo products were built for a sales channel, so the sync knows which ones it may rename. Run it when products have been listed on or removed from a channel since the plugin was installed. Safe to re-run; a product already recognised as the plugin's stays that way.
+
+```sh
 ./craft shipments-veeqo/sync/pull
 ```
 

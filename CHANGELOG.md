@@ -7,6 +7,7 @@
 - Veeqo product names, images and item names are kept up to date for products this plugin created. Products it linked to, or that hold more than one Craft product, are left as Veeqo has them.
 - Veeqo provider for the Shipments plugin, with order push, allocation mirroring, product sync, and stock pull.
 - The provider's channel id now supports environment variables, so each environment can push to its own Veeqo channel from shared project config.
+- `shipments-veeqo/products/classify` re-checks which Veeqo products were built for a sales channel, for a site whose catalog changed since the plugin was installed.
 
 ### Fixed
 
@@ -28,6 +29,7 @@
 - Fixed a bug where a variant added to a product already in Veeqo blocked its whole order from reaching Veeqo.
 - Fixed an error that could occur when pushing an order containing a product whose variants were linked to more than one Veeqo product.
 - Fixed an issue where a Veeqo error raised while syncing an order's products was missing from the shipment's last push attempt.
+- Fixed a bug where the job that works out which Veeqo products the plugin may rename ran out of time on a large catalog and left the rest treated as untouchable.
 - Fixed a bug where syncing a product overwrote the name and image of a Veeqo product it shares with other products, so those showed the wrong name and image in Veeqo and in its shipping emails. A Veeqo product holding one Craft product still has its name and image kept current.
 - Fixed a bug where syncing a product replaced each of its items' names in Veeqo with a size, leaving shipping emails with nothing identifying what was bought.
 - Fixed a bug where syncing a product overwrote its items' SKUs in Veeqo.

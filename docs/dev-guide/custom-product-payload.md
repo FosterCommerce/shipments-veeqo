@@ -34,6 +34,8 @@ Either way the product was built for something other than this Craft product, an
 
 Existing mappings from before this was recorded start adopted, and a queued job clears the flag for products with no sales channel listing. A product listed on a channel keeps it, since the channel shows that product's own name.
 
+That job reads every mapped Veeqo product one at a time, so on a large catalog it needs its full run to finish. A run cut short leaves the products it never reached adopted, which is indistinguishable from a product that really is listed. `./craft shipments-veeqo/products/classify` queues a fresh run.
+
 ## Variant entries
 
 A variant already mapped to this Veeqo product carries its `id`. One that isn't carries `sku_code` instead, and Veeqo creates it.
