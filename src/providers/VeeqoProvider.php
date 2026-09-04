@@ -29,8 +29,6 @@ class VeeqoProvider extends Provider
 	 */
 	public ?string $channelId = null;
 
-	public bool $notifyCustomer = false;
-
 	public string $orderIdPrefix = '';
 
 	private ?VeeqoApi $client = null;
@@ -129,7 +127,6 @@ class VeeqoProvider extends Provider
 	{
 		return array_merge(parent::defineRules(), [
 			[['apiKey', 'orderIdPrefix', 'channelId'], 'string'],
-			[['notifyCustomer'], 'boolean'],
 		]);
 	}
 

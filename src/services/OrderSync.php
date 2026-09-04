@@ -170,7 +170,6 @@ class OrderSync extends Component
 					'channel_id' => $channelId,
 					'customer_id' => $customerId,
 					'number' => $number,
-					'send_notification_email' => $provider->notifyCustomer,
 					'deliver_to_attributes' => $this->buildDeliverTo($order),
 					'line_items_attributes' => $lineItemAttributes,
 					// Veeqo has no settable status; including a payment marks the order paid so it leaves

@@ -48,6 +48,4 @@ return [
 	'provider.channelIdInstructions' => 'The Veeqo sales-channel ID that pushed orders belong to. Veeqo allocates orders to this channel’s default warehouse. Supports environment variables, so each environment can push to its own channel.',
 	'provider.orderIdPrefixLabel' => 'Order reference prefix',
 	'provider.orderIdPrefixInstructions' => 'Optional prefix applied to the reference sent to Veeqo.',
-	'provider.notifyCustomerLabel' => 'Notify customer from Veeqo',
-	'provider.notifyCustomerInstructions' => 'Whether Veeqo emails the customer when the order ships.',
 ];
