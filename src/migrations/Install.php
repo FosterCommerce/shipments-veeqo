@@ -46,7 +46,7 @@ class Install extends Migration
 			'orderId' => $this->integer()->notNull(),
 			'integrationId' => $this->integer()->notNull(),
 			'veeqoOrderNumber' => $this->string()->notNull(),
-			'veeqoOrderId' => $this->integer(),
+			'veeqoOrderId' => $this->bigInteger(),
 			'dateAllocationsSynced' => $this->dateTime(),
 			'dateCreated' => $this->dateTime()->notNull(),
 			'dateUpdated' => $this->dateTime()->notNull(),
