@@ -39,6 +39,8 @@
 - Fixed a bug where syncing a product replaced each of its items' names in Veeqo with a size, leaving shipping emails with nothing identifying what was bought.
 - Fixed a bug where syncing a product overwrote its items' SKUs in Veeqo.
 - Fixed an error that occurred when pushing an order once Veeqo's order ids passed 2,147,483,647, leaving that order without tracking or shipped status from Veeqo.
+- Fixed a bug where an order holding the same variant on more than one line item, such as with different options, never received tracking or shipped status from Veeqo.
+- Fixed a bug where a shipment's allocation sent to Veeqo counted only one of the line items for a variant the order held more than once.
 - Fixed a bug where a variant added to a product already in Veeqo never reached Veeqo, so it was created as a separate product the first time it was ordered.
 - Fixed a bug where syncing a product added its variants to a Veeqo product shared with other products, growing a grouping it did not own.
 - Fixed an issue where a product moved to a different Veeqo product stopped syncing until its mapping was corrected by hand.

@@ -208,20 +208,23 @@ class AllocationSync extends Component
 	 */
 	private function resolveSellableIds(Order $order, array $veeqoOrder): array
 	{
-		$lineItemIdByPurchasableId = [];
+		// One variant can be several line items when their options differ
+		$lineItemIdsByPurchasableId = [];
 		$lineItemIdByCustomSku = [];
 		foreach ($order->getLineItems() as $lineItem) {
 			if ($lineItem->purchasableId === null) {
 				$lineItemIdByCustomSku[ProductSync::CUSTOM_SKU_PREFIX . $lineItem->id] = (int) $lineItem->id;
 			} else {
-				$lineItemIdByPurchasableId[(int) $lineItem->purchasableId] = (int) $lineItem->id;
+				$lineItemIdsByPurchasableId[(int) $lineItem->purchasableId][] = (int) $lineItem->id;
 			}
 		}
 
 		$sellableIdByLineItemId = [];
-		$mappings = Plugin::instance()->getSellableMappings()->getSellableIdsByPurchasableId(array_keys($lineItemIdByPurchasableId));
+		$mappings = Plugin::instance()->getSellableMappings()->getSellableIdsByPurchasableId(array_keys($lineItemIdsByPurchasableId));
 		foreach ($mappings as $purchasableId => $sellableId) {
-			$sellableIdByLineItemId[$lineItemIdByPurchasableId[$purchasableId]] = $sellableId;
+			foreach ($lineItemIdsByPurchasableId[$purchasableId] as $lineItemId) {
+				$sellableIdByLineItemId[$lineItemId] = $sellableId;
+			}
 		}
 
 		foreach ($veeqoOrder['line_items'] ?? [] as $veeqoLineItem) {
