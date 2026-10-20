@@ -12,7 +12,8 @@
 
 ### Changed
 
-- Saving or bulk-syncing a product whose type is in the Shipments plugin's `productTypesToIgnore` setting no longer sends it to Veeqo. An order containing one still sends every line it holds.
+- Product sync no longer sends a product to Veeqo when its type is in the Shipments plugin's “Product types to ignore” setting.
+- Orders sent to Veeqo no longer include line items that don't require shipping, line items the Shipments plugin ignores, or line items given zero units by `ShipmentLineItems::EVENT_RESOLVE_SHIPPABLE_UNITS`.
 
 ### Fixed
 

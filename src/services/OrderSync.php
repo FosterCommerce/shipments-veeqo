@@ -18,6 +18,7 @@ use fostercommerce\shipments\elements\Shipment;
 use fostercommerce\shipments\errors\IntegrationException;
 use fostercommerce\shipments\errors\PermanentIntegrationException;
 use fostercommerce\shipments\models\Integration;
+use fostercommerce\shipments\Plugin as ShipmentsPlugin;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
 use fostercommerce\shipments\veeqo\helpers\AddressFields;
 use fostercommerce\shipments\veeqo\helpers\VeeqoPrice;
@@ -245,8 +246,8 @@ class OrderSync extends Component
 	}
 
 	/**
-	 * Map each order line item to a Veeqo sellable, creating the sellable on demand so a push
-	 * never requires a separate product sync first.
+	 * Map each order line item that ships to a Veeqo sellable, creating the sellable on demand so a
+	 * push never requires a separate product sync first.
 	 *
 	 * @return list<array{sellable_id: int, quantity: int, price_per_unit: string}>
 	 * @throws PermanentIntegrationException
@@ -255,9 +256,21 @@ class OrderSync extends Component
 	private function buildLineItemAttributes(Order $order, VeeqoProvider $provider): array
 	{
 		$currencyCode = (string) $order->currency;
+		/** @var ShipmentsPlugin $shipments */
+		$shipments = ShipmentsPlugin::getInstance();
+		$shippableUnits = $shipments->shipmentLineItems->shippableUnitsFor($order);
 
 		$attributes = [];
 		foreach ($order->getLineItems() as $lineItem) {
+			// Skip a line no shipment can hold, since Veeqo would reserve stock and expect to ship it
+			if (! $shipments->shipmentLineItems->isShippingWork($lineItem)) {
+				continue;
+			}
+
+			if (($shippableUnits[$lineItem->id] ?? 0) === 0) {
+				continue;
+			}
+
 			$sellableId = $lineItem->purchasableId === null
 				? $this->resolveCustomSellableId($lineItem, $provider)
 				: $this->resolvePurchasableSellableId($lineItem, $provider);

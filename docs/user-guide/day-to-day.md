@@ -6,11 +6,13 @@ This page assumes the integration is already configured. See [Installation](../i
 
 ## How an order reaches Veeqo
 
-An order goes to Veeqo as a whole, once. It is sent when a shipment on that order reaches the status set in **Auto-push to Veeqo at status**, or when you press **Push to Veeqo** on a shipment yourself.
+An order goes to Veeqo once, as one Veeqo order. It is sent when a shipment on that order reaches the status set in **Auto-push to Veeqo at status**, or when you press **Push to Veeqo** on a shipment yourself.
 
 Only the first push creates the order. Pressing the button again on that order sends its current split instead, so there is no way to create the same order twice by clicking twice.
 
 The order arrives in Veeqo already marked as paid, so it lands ready to pick rather than waiting for payment.
+
+The plugin sends only the line items a shipment can hold. It leaves out a line item that doesn't require shipping in Commerce, including a custom line item not marked shippable, and a line item whose product type or status is in the Shipments plugin's **Product types to ignore** or **Line item statuses to ignore**.
 
 ## How tracking comes back
 
@@ -51,7 +53,7 @@ When a variant's SKU already exists in Veeqo, the sync links to it rather than c
 
 Adding a variant in Craft later adds it to the same Veeqo product. Editing a product's name, image or a variant's name updates Veeqo on the next save.
 
-Saving a product of a type listed in the Shipments plugin's **Product types to ignore** syncs nothing, and the bulk sync skips it. An order containing one still sends every line it holds, so that product appears in Veeqo as a product of its own when the order is pushed.
+Saving a product whose type is in the Shipments plugin's **Product types to ignore** does not send it to Veeqo, and the bulk sync skips it.
 
 ### Products the sync leaves alone
 
@@ -78,7 +80,7 @@ A failed push leaves its reason on the shipment, in the sidebar under **Integrat
 | No Veeqo channel ID is set on the integration | Add the channel ID under **Shipments -> Settings -> Integrations** |
 | The Veeqo integration hasn't been saved yet | Open the integration and save it |
 | This order has no email address | Add an email to the order; Veeqo requires one |
-| This order has no line items to send | Check that the order has something to ship |
+| This order has no line items to send | Check that at least one line item requires shipping and isn't excluded by the Shipments plugin's **Product types to ignore** or **Line item statuses to ignore** |
 | An item couldn't be synced to Veeqo, check that its variant has a SKU | Give the product variant a SKU in Craft, then push again |
 | Another push for this order is already running | Wait a moment and try again |
 

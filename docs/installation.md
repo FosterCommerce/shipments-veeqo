@@ -144,7 +144,7 @@ When Veeqo already holds products, link them to Craft by SKU before syncing so t
 
 Veeqo has no webhooks and the plugin exposes no endpoint for Veeqo to call. Inbound updates are pull only, through `shipments-veeqo/sync/pull`.
 
-Craft pushes a whole order to Veeqo as one Veeqo order. Veeqo then splits it into one or more **allocations**, one per parcel it intends to ship, and each allocation carries its own line items and tracking. Craft keeps one shipment per allocation, and either side can change that split.
+Craft pushes each order to Veeqo as one Veeqo order. Veeqo then splits it into one or more **allocations**, one per parcel it intends to ship, and each allocation carries its own line items and tracking. Craft keeps one shipment per allocation, and either side can change that split.
 
 Each run asks Veeqo about the orders Craft still counts as unfinished: any order holding a shipment at **New**, **In progress**, or **On hold**. There is no date window, so an order picked up a year after it was raised is still reconciled. An order whose shipments have all reached **Fulfilled**, **Shipped**, or **Cancelled** is no longer queried, including when someone set that status by hand in Craft.
 
