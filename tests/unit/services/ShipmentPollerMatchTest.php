@@ -31,7 +31,12 @@ final class ShipmentPollerMatchTest extends TestCase
 
 	public function testRecoversCustomLineItemIdFromSyntheticSku(): void
 	{
-		self::assertSame([42], $this->match(['sku_code' => 'custom-42'], [], []));
+		self::assertSame([42], $this->match(['sku_code' => 'custom-42'], [], [], [42]));
+	}
+
+	public function testIgnoresACustomLineItemOutsideTheIndex(): void
+	{
+		self::assertSame([], $this->match(['sku_code' => 'custom-42'], [], []));
 	}
 
 	public function testSellableIdWinsOverSku(): void
@@ -85,6 +90,22 @@ final class ShipmentPollerMatchTest extends TestCase
 		self::assertSame([5 => 1], $this->resolve($allocation, [100 => [5, 6]], $unassignedQtyByLineItemId, [5 => 1]));
 	}
 
+	public function testDropsUnitsOfLineItemsCraftDoesNotShip(): void
+	{
+		$unassignedQtyByLineItemId = [5 => 1];
+		$allocation = ['line_items' => [['sellable_id' => 100, 'quantity' => 2]]];
+
+		self::assertSame([5 => 1], $this->resolve($allocation, [100 => [5]], $unassignedQtyByLineItemId, [], [100 => [9]], [9 => 1]));
+	}
+
+	public function testGivesExcessBeyondUnshippedLineItemsToTheLastLineItem(): void
+	{
+		$unassignedQtyByLineItemId = [5 => 1];
+		$allocation = ['line_items' => [['sellable_id' => 100, 'quantity' => 3]]];
+
+		self::assertSame([5 => 2], $this->resolve($allocation, [100 => [5]], $unassignedQtyByLineItemId, [], [100 => [9]], [9 => 1]));
+	}
+
 	public function testRefillsAnUnevenSplit(): void
 	{
 		$unassignedQtyByLineItemId = [5 => 2, 6 => 1];
@@ -97,13 +118,19 @@ final class ShipmentPollerMatchTest extends TestCase
 	 * @param array<array-key, mixed> $line
 	 * @param array<int, list<int>> $bySellableId
 	 * @param array<string, list<int>> $bySku
+	 * @param list<int> $customLineItemIds
 	 * @return list<int>
 	 */
-	private function match(array $line, array $bySellableId, array $bySku): array
+	private function match(array $line, array $bySellableId, array $bySku, array $customLineItemIds = []): array
 	{
 		$method = new ReflectionMethod(ShipmentPoller::class, 'matchAllocationLine');
+		$lineItemIndex = [
+			'bySellableId' => $bySellableId,
+			'bySku' => $bySku,
+			'qtyByLineItemId' => array_fill_keys($customLineItemIds, 1),
+		];
 		/** @var list<int> $result */
-		$result = $method->invoke(new ShipmentPoller(), $line, $bySellableId, $bySku);
+		$result = $method->invoke(new ShipmentPoller(), $line, $lineItemIndex);
 		return $result;
 	}
 
@@ -112,17 +139,25 @@ final class ShipmentPollerMatchTest extends TestCase
 	 * @param array<int, list<int>> $bySellableId
 	 * @param array<int, int> $unassignedQtyByLineItemId
 	 * @param array<int, int> $heldQtyByLineItemId
+	 * @param array<int, list<int>> $unshippedBySellableId
+	 * @param array<int, int> $unshippedQtyByLineItemId
 	 * @return array<int, int>
 	 */
-	private function resolve(array $allocation, array $bySellableId, array &$unassignedQtyByLineItemId, array $heldQtyByLineItemId = []): array
+	private function resolve(array $allocation, array $bySellableId, array &$unassignedQtyByLineItemId, array $heldQtyByLineItemId = [], array $unshippedBySellableId = [], array $unshippedQtyByLineItemId = []): array
 	{
 		$method = new ReflectionMethod(ShipmentPoller::class, 'resolveAllocationLineItems');
 		$lineItemIndex = [
 			'bySellableId' => $bySellableId,
 			'bySku' => [],
+			'qtyByLineItemId' => $unassignedQtyByLineItemId,
+		];
+		$unshippedLineItemIndex = [
+			'bySellableId' => $unshippedBySellableId,
+			'bySku' => [],
+			'qtyByLineItemId' => $unshippedQtyByLineItemId,
 		];
 		/** @var array<int, int> $result */
-		$result = $method->invokeArgs(new ShipmentPoller(), [$allocation, $lineItemIndex, $heldQtyByLineItemId, &$unassignedQtyByLineItemId]);
+		$result = $method->invokeArgs(new ShipmentPoller(), [$allocation, $lineItemIndex, $unshippedLineItemIndex, $heldQtyByLineItemId, &$unassignedQtyByLineItemId]);
 		return $result;
 	}
 }

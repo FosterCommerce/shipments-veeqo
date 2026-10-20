@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Fixed a bug where a Veeqo allocation with a line item Craft doesn't ship, such as one the Shipments plugin ignores or one given zero units, failed to sync to Craft.
 - Fixed a bug where splitting or editing an order's shipments in Craft never reached Veeqo.
 - Fixed a bug where editing a shipment's line items in Craft stopped that order receiving tracking and shipped status from Veeqo.
 - Fixed a bug where Veeqo merging an order's parcels made Craft ask for that order to be cancelled.

@@ -6,6 +6,7 @@ namespace fostercommerce\shipments\veeqo\services;
 
 use Craft;
 use craft\commerce\elements\Order;
+use craft\commerce\models\LineItem;
 use craft\db\Query;
 use craft\db\Table as CraftTable;
 use fostercommerce\shipments\db\Table as ShipmentsTable;
@@ -18,6 +19,7 @@ use fostercommerce\shipments\models\ShipmentUpdatePayload;
 use fostercommerce\shipments\Plugin as ShipmentsPlugin;
 use fostercommerce\shipments\veeqo\db\Table;
 use fostercommerce\shipments\veeqo\errors\VeeqoApiException;
+use fostercommerce\shipments\veeqo\helpers\ShippedLineItems;
 use fostercommerce\shipments\veeqo\helpers\VeeqoReference;
 use fostercommerce\shipments\veeqo\Plugin;
 use fostercommerce\shipments\veeqo\providers\VeeqoProvider;
@@ -167,7 +169,13 @@ class ShipmentPoller extends Component
 			}
 		}
 
-		$lineItemIndex = $this->buildLineItemIndex($order);
+		$shippedLineItems = ShippedLineItems::forOrder($order);
+		$shippedLineItemIds = array_map(static fn (LineItem $lineItem): ?int => $lineItem->id, $shippedLineItems);
+		$lineItemIndex = $this->buildLineItemIndex($shippedLineItems);
+		$unshippedLineItemIndex = $this->buildLineItemIndex(array_values(array_filter(
+			$order->getLineItems(),
+			static fn (LineItem $lineItem): bool => ! in_array($lineItem->id, $shippedLineItemIds, true),
+		)));
 		$heldQtysByAllocationId = $this->heldQtysByAllocationId($shipmentByAllocationId);
 		$unassignedQtyByLineItemId = $this->shipments()->shipmentLineItems->shippableUnitsFor($order);
 		$craftSplitIsNewer = $this->craftSplitIsNewer($order->id, $integrationId);
@@ -194,7 +202,7 @@ class ShipmentPoller extends Component
 				continue;
 			}
 
-			$lineItemQtys = $this->resolveAllocationLineItems($allocation, $lineItemIndex, $heldQtysByAllocationId[$allocationId] ?? [], $unassignedQtyByLineItemId);
+			$lineItemQtys = $this->resolveAllocationLineItems($allocation, $lineItemIndex, $unshippedLineItemIndex, $heldQtysByAllocationId[$allocationId] ?? [], $unassignedQtyByLineItemId);
 			if ($lineItemQtys === []) {
 				Craft::warning("Veeqo allocation {$allocationId} on order {$order->reference}: no mappable line items; skipped.", Plugin::HANDLE);
 				continue;
@@ -464,20 +472,24 @@ class ShipmentPoller extends Component
 	}
 
 	/**
-	 * The order's line items indexed the two ways an allocation line can name them. Built once per
-	 * order, since every allocation on it resolves against the same set.
+	 * Line items indexed the two ways an allocation line can name them. Built once per order, since
+	 * every allocation on it resolves against the same set.
 	 *
-	 * @return array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>}
+	 * @param list<LineItem> $lineItems
+	 * @return array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>, qtyByLineItemId: array<int, int>}
 	 */
-	private function buildLineItemIndex(Order $order): array
+	private function buildLineItemIndex(array $lineItems): array
 	{
 		// One variant can be several line items when their options differ
 		$lineItemIdsBySku = [];
 		$lineItemIdsByPurchasableId = [];
-		foreach ($order->getLineItems() as $lineItem) {
+		$qtyByLineItemId = [];
+		foreach ($lineItems as $lineItem) {
 			if ($lineItem->id === null) {
 				continue;
 			}
+
+			$qtyByLineItemId[$lineItem->id] = $lineItem->qty;
 
 			$sku = trim($lineItem->getSku());
 			if ($sku !== '') {
@@ -499,6 +511,7 @@ class ShipmentPoller extends Component
 		return [
 			'bySellableId' => $lineItemIdsBySellableId,
 			'bySku' => $lineItemIdsBySku,
+			'qtyByLineItemId' => $qtyByLineItemId,
 		];
 	}
 
@@ -506,12 +519,13 @@ class ShipmentPoller extends Component
 	 * Maps a Veeqo allocation's line items to Craft order line item quantities.
 	 *
 	 * @param array<array-key, mixed> $allocation
-	 * @param array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>} $lineItemIndex
+	 * @param array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>, qtyByLineItemId: array<int, int>} $lineItemIndex the shipped line items
+	 * @param array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>, qtyByLineItemId: array<int, int>} $unshippedLineItemIndex
 	 * @param array<int, int> $heldQtyByLineItemId quantities the allocation's shipment holds in Craft
 	 * @param array<int, int> $unassignedQtyByLineItemId reduced by each allocation resolved on the order
 	 * @return array<int, int> lineItemId => qty
 	 */
-	private function resolveAllocationLineItems(array $allocation, array $lineItemIndex, array $heldQtyByLineItemId, array &$unassignedQtyByLineItemId): array
+	private function resolveAllocationLineItems(array $allocation, array $lineItemIndex, array $unshippedLineItemIndex, array $heldQtyByLineItemId, array &$unassignedQtyByLineItemId): array
 	{
 		$lines = $allocation['line_items'] ?? [];
 		if (! is_array($lines)) {
@@ -529,7 +543,7 @@ class ShipmentPoller extends Component
 				continue;
 			}
 
-			$lineItemIds = $this->matchAllocationLine($line, $lineItemIndex['bySellableId'], $lineItemIndex['bySku']);
+			$lineItemIds = $this->matchAllocationLine($line, $lineItemIndex);
 			if ($lineItemIds === []) {
 				continue;
 			}
@@ -537,6 +551,13 @@ class ShipmentPoller extends Component
 			// Refill what the shipment already holds before the rest, since a Veeqo line names only the variant
 			$qty = $this->fillLineItems($lineItemIds, $qty, $heldQtyByLineItemId, $qtyByLineItemId, $unassignedQtyByLineItemId);
 			$qty = $this->fillLineItems($lineItemIds, $qty, $unassignedQtyByLineItemId, $qtyByLineItemId, $unassignedQtyByLineItemId);
+
+			// Subtract units of unshipped line items, since an order pushed before the filter still lists them
+			$unshippedQty = array_sum(array_map(
+				static fn (int $lineItemId): int => $unshippedLineItemIndex['qtyByLineItemId'][$lineItemId],
+				$this->matchAllocationLine($line, $unshippedLineItemIndex),
+			));
+			$qty -= min($qty, $unshippedQty);
 
 			// Give the excess to the last line item, so saving an existing shipment rejects the mismatch
 			if ($qty > 0) {
@@ -596,12 +617,13 @@ class ShipmentPoller extends Component
 
 	/**
 	 * @param array<array-key, mixed> $line
-	 * @param array<int, list<int>> $lineItemIdsBySellableId
-	 * @param array<string, list<int>> $lineItemIdsBySku
+	 * @param array{bySellableId: array<int, list<int>>, bySku: array<string, list<int>>, qtyByLineItemId: array<int, int>} $lineItemIndex
 	 * @return list<int>
 	 */
-	private function matchAllocationLine(array $line, array $lineItemIdsBySellableId, array $lineItemIdsBySku): array
+	private function matchAllocationLine(array $line, array $lineItemIndex): array
 	{
+		$lineItemIdsBySellableId = $lineItemIndex['bySellableId'];
+		$lineItemIdsBySku = $lineItemIndex['bySku'];
 		$sellable = is_array($line['sellable'] ?? null) ? $line['sellable'] : [];
 
 		$sellableId = $this->intField($line, 'sellable_id') !== 0 ? $this->intField($line, 'sellable_id') : $this->intField($sellable, 'id');
@@ -619,7 +641,8 @@ class ShipmentPoller extends Component
 		}
 
 		if (str_starts_with($sku, ProductSync::CUSTOM_SKU_PREFIX)) {
-			return [(int) substr($sku, strlen(ProductSync::CUSTOM_SKU_PREFIX))];
+			$lineItemId = (int) substr($sku, strlen(ProductSync::CUSTOM_SKU_PREFIX));
+			return isset($lineItemIndex['qtyByLineItemId'][$lineItemId]) ? [$lineItemId] : [];
 		}
 
 		return [];
